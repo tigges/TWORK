@@ -1,0 +1,602 @@
+// This is your Prisma schema file.
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public"), pg_trgm, unaccent]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANT & ACCOUNT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  dataRegion  String     @default("us")
+  plan        String     @default("free")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users              User[]
+  memberships        Membership[]
+  bots               Bot[]
+  apiKeys            ApiKey[]
+  webhooks           Webhook[]
+
+  @@map("tenants")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  tenantId      String
+  email         String
+  displayName   String
+  avatarUrl     String?
+  passwordHash  String?
+  locale        String    @default("en")
+  timezone      String    @default("UTC")
+  lastSeenAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships   Membership[]
+  oauthAccounts OAuthAccount[]
+  sessions      UserSession[]
+  agentProfile  AgentProfile?
+  activities    Activity[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model OAuthAccount {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  provider   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@map("oauth_accounts")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+  role     String @default("DEVELOPER")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("memberships")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  keyHash     String    @unique
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOT & ENVIRONMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Bot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  avatarUrl   String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  environments Environment[]
+  flows        Flow[]
+  intents      Intent[]
+  entities     Entity[]
+  faqs         Faq[]
+  knowledgeSources KnowledgeSource[]
+  channels     Channel[]
+  conversations Conversation[]
+  campaigns    Campaign[]
+  templates    Template[]
+  dashboards   Dashboard[]
+  reports      Report[]
+
+  @@map("bots")
+}
+
+model Environment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  botId       String
+  kind        String   @default("sandbox")
+  name        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot           Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  flowVersions  FlowVersion[]
+  conversations Conversation[]
+  channels      Channel[]
+
+  @@unique([botId, kind])
+  @@map("environments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FLOWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Flow {
+  id          String   @id @default(cuid())
+  tenantId    String
+  botId       String
+  name        String
+  description String?
+  kind        String   @default("flow")
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot      Bot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  versions FlowVersion[]
+
+  @@map("flows")
+}
+
+model FlowVersion {
+  id            String   @id @default(cuid())
+  tenantId      String
+  flowId        String
+  environmentId String?
+  version       Int
+  status        String   @default("draft")
+  graph         Json
+  variables     Json     @default("[]")
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  flow        Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id])
+  stepLogs    StepLog[]
+
+  @@unique([flowId, version])
+  @@map("flow_versions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KNOWLEDGE / TRAINING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Intent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  botId       String
+  name        String
+  description String?
+  utterances  String[]
+  responses   Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, name])
+  @@map("intents")
+}
+
+model Entity {
+  id        String   @id @default(cuid())
+  tenantId  String
+  botId     String
+  name      String
+  kind      String   @default("list")
+  values    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, name])
+  @@map("entities")
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  tenantId  String
+  botId     String
+  question  String
+  answer    String
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("faqs")
+}
+
+model KnowledgeSource {
+  id         String   @id @default(cuid())
+  tenantId   String
+  botId      String
+  name       String
+  kind       String
+  config     Json     @default("{}")
+  lastSyncAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  bot       Bot        @relation(fields: [botId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@map("knowledge_sources")
+}
+
+model Document {
+  id               String   @id @default(cuid())
+  tenantId         String
+  knowledgeSourceId String
+  title            String
+  content          String
+  status           String   @default("processing")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  chunks          DocumentChunk[]
+
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id         String                  @id @default(cuid())
+  tenantId   String
+  documentId String
+  content    String
+  embedding  Unsupported("vector")?
+  metadata   Json                   @default("{}")
+  createdAt  DateTime               @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_chunks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANNELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Channel {
+  id            String   @id @default(cuid())
+  tenantId      String
+  botId         String
+  environmentId String
+  name          String
+  kind          String
+  config        Json     @default("{}")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bot         Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id])
+  conversations Conversation[]
+
+  @@map("channels")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONVERSATIONS & INBOX
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  botId         String
+  environmentId String
+  channelId     String?
+  contactId     String?
+  status        String    @default("active")
+  assignedTo    String?
+  teamId        String?
+  subject       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resolvedAt    DateTime?
+
+  bot         Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  environment Environment  @relation(fields: [environmentId], references: [id])
+  channel     Channel?     @relation(fields: [channelId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  messages    Message[]
+  tickets     Ticket[]
+  stepLogs    StepLog[]
+  labels      ConversationLabel[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  direction      String
+  authorKind     String   @default("user")
+  authorId       String?
+  content        Json
+  channelMsgId   String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model StepLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  flowVersionId  String
+  nodeId         String
+  nodeKind       String
+  input          Json     @default("{}")
+  output         Json     @default("{}")
+  durationMs     Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  flowVersion  FlowVersion  @relation(fields: [flowVersionId], references: [id])
+
+  @@map("step_logs")
+}
+
+model Ticket {
+  id             String    @id @default(cuid())
+  tenantId       String
+  conversationId String
+  subject        String
+  status         String    @default("open")
+  priority       String    @default("medium")
+  assignedTo     String?
+  teamId         String?
+  tags           String[]
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("tickets")
+}
+
+model Label {
+  id        String @id @default(cuid())
+  tenantId  String
+  name      String
+  color     String @default("#94a3b8")
+
+  conversations ConversationLabel[]
+
+  @@unique([tenantId, name])
+  @@map("labels")
+}
+
+model ConversationLabel {
+  conversationId String
+  labelId        String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  label        Label        @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, labelId])
+  @@map("conversation_labels")
+}
+
+model AgentProfile {
+  id          String @id @default(cuid())
+  tenantId    String
+  userId      String @unique
+  displayName String
+  status      String @default("offline")
+  teamId      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("agent_profiles")
+}
+
+model Team {
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
+  botId    String?
+
+  @@map("teams")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTACTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Contact {
+  id          String    @id @default(cuid())
+  tenantId    String
+  externalId  String?
+  channelId   String?
+  displayName String?
+  email       String?
+  phone       String?
+  avatarUrl   String?
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  conversations Conversation[]
+
+  @@map("contacts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENGAGEMENT: CAMPAIGNS & TEMPLATES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Campaign {
+  id          String    @id @default(cuid())
+  tenantId    String
+  botId       String
+  name        String
+  direction   String    @default("outbound")
+  status      String    @default("draft")
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("campaigns")
+}
+
+model Template {
+  id             String   @id @default(cuid())
+  tenantId       String
+  botId          String
+  name           String
+  channel        String
+  approvalStatus String   @default("pending")
+  content        Json
+  variables      String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, name, channel])
+  @@map("templates")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Dashboard {
+  id        String   @id @default(cuid())
+  tenantId  String
+  botId     String
+  name      String
+  layout    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bot     Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  widgets Widget[]
+
+  @@map("dashboards")
+}
+
+model Widget {
+  id          String @id @default(cuid())
+  tenantId    String
+  dashboardId String
+  kind        String
+  title       String
+  config      Json   @default("{}")
+  position    Json   @default("{}")
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@map("widgets")
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  tenantId    String
+  botId       String
+  name        String
+  query       Json
+  schedule    String?
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLATFORM CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  url       String
+  events    String[]
+  secret    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("webhooks")
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  action    String
+  resource  String?
+  resourceId String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}

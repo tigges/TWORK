@@ -1,0 +1,176 @@
+import React from 'react'
+import {
+  createRouter,
+  createRoute,
+  createRootRoute,
+  redirect,
+  Outlet,
+} from '@tanstack/react-router'
+import { AppShell } from '../components/AppShell'
+import { useAppStore } from '../store/app'
+
+// ── Page imports ──────────────────────────────────────────────────────────────
+import { SignInPage } from '../pages/SignIn'
+import { BotSelectorPage } from '../pages/BotSelector'
+import { OverviewPage } from '../pages/Overview'
+import { FlowsPage } from '../pages/build/Flows'
+import { WorkflowsPage } from '../pages/build/Workflows'
+import { IntentsPage } from '../pages/build/knowledge/Intents'
+import { EntitiesPage } from '../pages/build/knowledge/Entities'
+import { FaqsPage } from '../pages/build/knowledge/Faqs'
+import { SourcesPage } from '../pages/build/knowledge/Sources'
+import { TrainingPage } from '../pages/build/knowledge/Training'
+import { ChatsPage } from '../pages/inbox/Chats'
+import { TicketsPage } from '../pages/inbox/Tickets'
+import { ContactsPage } from '../pages/inbox/Contacts'
+import { InboxSettingsPage } from '../pages/inbox/Settings'
+import { CampaignsPage } from '../pages/engage/Campaigns'
+import { TemplatesPage } from '../pages/engage/Templates'
+import { AnalyticsOverviewPage } from '../pages/analytics/Overview'
+import { DashboardsPage } from '../pages/analytics/Dashboards'
+import { ReportsPage } from '../pages/analytics/Reports'
+import { ChannelsPage } from '../pages/configure/Channels'
+import { IntegrationsPage } from '../pages/configure/Integrations'
+import { DatabasePage } from '../pages/configure/Database'
+import { WebhooksPage } from '../pages/configure/Webhooks'
+import { TeamPage } from '../pages/admin/Team'
+import { AuditPage } from '../pages/admin/Audit'
+import { SettingsPage } from '../pages/Settings'
+import { BotNewPage } from '../pages/BotNew'
+
+// ── Auth guard ────────────────────────────────────────────────────────────────
+function requireAuth() {
+  const token = useAppStore.getState().token
+  if (!token) throw redirect({ to: '/sign-in' })
+}
+
+// ── Root ─────────────────────────────────────────────────────────────────────
+const rootRoute = createRootRoute({ component: Outlet })
+
+// ── Auth routes ───────────────────────────────────────────────────────────────
+const signInRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sign-in',
+  component: SignInPage,
+})
+
+// ── Bot selector ─────────────────────────────────────────────────────────────
+const botSelectorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/bots',
+  beforeLoad: requireAuth,
+  component: BotSelectorPage,
+})
+
+const botNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/bots/new',
+  beforeLoad: requireAuth,
+  component: BotNewPage,
+})
+
+// ── App shell wrapper ─────────────────────────────────────────────────────────
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'app',
+  beforeLoad: requireAuth,
+  component: AppShell,
+})
+
+// ── Index redirect ────────────────────────────────────────────────────────────
+const indexRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/',
+  beforeLoad: () => { throw redirect({ to: '/overview' }) },
+  component: () => null,
+})
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+const overviewRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/overview',
+  component: OverviewPage,
+})
+
+// ── Build ─────────────────────────────────────────────────────────────────────
+const flowsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/flows', component: FlowsPage })
+const workflowsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/workflows', component: WorkflowsPage })
+const intentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/intents', component: IntentsPage })
+const entitiesRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/entities', component: EntitiesPage })
+const faqsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/faqs', component: FaqsPage })
+const sourcesRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/sources', component: SourcesPage })
+const trainingRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/training', component: TrainingPage })
+
+// ── Inbox ─────────────────────────────────────────────────────────────────────
+const chatsRoute = createRoute({ getParentRoute: () => appRoute, path: '/inbox/chats', component: ChatsPage })
+const ticketsRoute = createRoute({ getParentRoute: () => appRoute, path: '/inbox/tickets', component: TicketsPage })
+const contactsRoute = createRoute({ getParentRoute: () => appRoute, path: '/inbox/contacts', component: ContactsPage })
+const inboxSettingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/inbox/settings', component: InboxSettingsPage })
+const inboxRoute = createRoute({ getParentRoute: () => appRoute, path: '/inbox', beforeLoad: () => { throw redirect({ to: '/inbox/chats' }) }, component: () => null })
+
+// ── Engage ────────────────────────────────────────────────────────────────────
+const campaignsRoute = createRoute({ getParentRoute: () => appRoute, path: '/engage/campaigns', component: CampaignsPage })
+const templatesRoute = createRoute({ getParentRoute: () => appRoute, path: '/engage/templates', component: TemplatesPage })
+const engageRoute = createRoute({ getParentRoute: () => appRoute, path: '/engage', beforeLoad: () => { throw redirect({ to: '/engage/campaigns' }) }, component: () => null })
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+const analyticsRoute = createRoute({ getParentRoute: () => appRoute, path: '/analytics', component: AnalyticsOverviewPage })
+const dashboardsRoute = createRoute({ getParentRoute: () => appRoute, path: '/analytics/dashboards', component: DashboardsPage })
+const reportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/analytics/reports', component: ReportsPage })
+
+// ── Configure ─────────────────────────────────────────────────────────────────
+const channelsRoute = createRoute({ getParentRoute: () => appRoute, path: '/configure/channels', component: ChannelsPage })
+const integrationsRoute = createRoute({ getParentRoute: () => appRoute, path: '/configure/integrations', component: IntegrationsPage })
+const databaseRoute = createRoute({ getParentRoute: () => appRoute, path: '/configure/database', component: DatabasePage })
+const webhooksRoute = createRoute({ getParentRoute: () => appRoute, path: '/configure/webhooks', component: WebhooksPage })
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+const teamRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin/team', component: TeamPage })
+const auditRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin/audit', component: AuditPage })
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsPage })
+
+// ── Router ────────────────────────────────────────────────────────────────────
+const routeTree = rootRoute.addChildren([
+  signInRoute,
+  botSelectorRoute,
+  botNewRoute,
+  appRoute.addChildren([
+    indexRoute,
+    overviewRoute,
+    flowsRoute,
+    workflowsRoute,
+    intentsRoute,
+    entitiesRoute,
+    faqsRoute,
+    sourcesRoute,
+    trainingRoute,
+    inboxRoute,
+    chatsRoute,
+    ticketsRoute,
+    contactsRoute,
+    inboxSettingsRoute,
+    engageRoute,
+    campaignsRoute,
+    templatesRoute,
+    analyticsRoute,
+    dashboardsRoute,
+    reportsRoute,
+    channelsRoute,
+    integrationsRoute,
+    databaseRoute,
+    webhooksRoute,
+    teamRoute,
+    auditRoute,
+    settingsRoute,
+  ]),
+])
+
+export const router = createRouter({ routeTree })
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}

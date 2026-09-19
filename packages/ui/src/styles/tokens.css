@@ -1,0 +1,158 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Design Tokens — CSS Custom Properties
+   Using the Dark-first approach: default = dark, .light class for light mode
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Colour: Background ── */
+  --bg-base:        #0d0d10;
+  --bg-surface:     #17171c;
+  --bg-elevated:    #1f1f26;
+  --bg-overlay:     #2a2a34;
+  --bg-hover:       rgba(255,255,255,0.04);
+  --bg-active:      rgba(255,255,255,0.08);
+  --bg-selected:    rgba(99,102,241,0.15);
+
+  /* ── Colour: Border ── */
+  --border:         rgba(255,255,255,0.08);
+  --border-strong:  rgba(255,255,255,0.15);
+  --border-focus:   #6366f1;
+
+  /* ── Colour: Text ── */
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+  --text-inverse:   #0d0d10;
+  --text-link:      #818cf8;
+
+  /* ── Brand / Accent ── */
+  --accent:         #6366f1;
+  --accent-hover:   #4f46e5;
+  --accent-muted:   rgba(99,102,241,0.12);
+  --accent-fg:      #ffffff;
+
+  /* ── Semantic ── */
+  --success:        #22c55e;
+  --success-muted:  rgba(34,197,94,0.12);
+  --warning:        #f59e0b;
+  --warning-muted:  rgba(245,158,11,0.12);
+  --error:          #ef4444;
+  --error-muted:    rgba(239,68,68,0.12);
+  --info:           #3b82f6;
+  --info-muted:     rgba(59,130,246,0.12);
+
+  /* ── NavRail ── */
+  --nav-width:       220px;
+  --nav-width-mini:  56px;
+  --nav-bg:          #111115;
+  --nav-border:      rgba(255,255,255,0.06);
+  --nav-item-height: 36px;
+
+  /* ── TopBar ── */
+  --topbar-height:  48px;
+  --topbar-bg:      #17171c;
+  --topbar-border:  rgba(255,255,255,0.06);
+
+  /* ── Spacing ── */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+
+  /* ── Radius ── */
+  --radius-sm: 4px;
+  --radius:    6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ── Shadow ── */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow:    0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   16px;
+  --text-xl:   18px;
+  --text-2xl:  20px;
+  --text-3xl:  24px;
+  --text-4xl:  30px;
+
+  /* ── Motion ── */
+  --duration-fast:   100ms;
+  --duration-base:   180ms;
+  --duration-slow:   280ms;
+  --ease:            cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Light mode overrides */
+.light {
+  --bg-base:        #f8f9fb;
+  --bg-surface:     #ffffff;
+  --bg-elevated:    #f1f5f9;
+  --bg-overlay:     #e8edf3;
+  --bg-hover:       rgba(0,0,0,0.03);
+  --bg-active:      rgba(0,0,0,0.06);
+  --bg-selected:    rgba(99,102,241,0.08);
+
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.15);
+
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --text-inverse:   #f8f9fb;
+  --text-link:      #4f46e5;
+
+  --nav-bg:         #f1f5f9;
+  --nav-border:     rgba(0,0,0,0.06);
+  --topbar-bg:      #ffffff;
+  --topbar-border:  rgba(0,0,0,0.06);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow:    0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+/* ── Global Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}

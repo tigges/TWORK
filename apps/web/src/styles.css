@@ -1,0 +1,8 @@
+@import "@ybot/ui/styles";
+@import "tailwindcss";
+
+@theme {
+  --color-accent: var(--accent);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+}
