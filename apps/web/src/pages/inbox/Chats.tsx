@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   Search, Filter, ChevronDown, Paperclip, Smile, Send,
   AlertCircle, Clock, CheckCheck, MoreHorizontal, Tag,
   UserPlus, ArrowRightLeft, Ticket, StickyNote, MessageCircle,
   Phone, Mail, Globe, Hash, ChevronRight, X, Mic,
-  Circle, Zap, Star,
+  Circle, Zap, Star, Bot, Loader2,
 } from 'lucide-react'
 import { Avatar, Badge, Input, Button, Skeleton } from '@ybot/ui'
 import {
@@ -14,7 +14,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
-import { useConversations, useConversation, useSendMessage, useAssignConversation, useResolveConversation } from '../../lib/hooks'
+import { useConversations, useConversation, useSendMessage, useAssignConversation, useResolveConversation, useRealtimeSocket, useAiReply } from '../../lib/hooks'
+import { useQueryClient } from '@tanstack/react-query'
 
 const SUBNAV = [
   { label: 'Chats', path: '/inbox/chats' },
@@ -124,8 +125,21 @@ export function ChatsPage() {
   const { data: conversations = [], isLoading: loadingConvos } = useConversations()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const sendMessage = useSendMessage()
+  const aiReply = useAiReply()
   const assignConversation = useAssignConversation()
   const resolveConversation = useResolveConversation()
+  const qc = useQueryClient()
+
+  // WebSocket: invalidate conversation cache when new messages arrive
+  useRealtimeSocket((event) => {
+    if (event.event === 'message.created') {
+      const convId = (event.data as unknown as { conversationId: string }).conversationId
+      if (convId) {
+        qc.invalidateQueries({ queryKey: ['conversation', convId] })
+        qc.invalidateQueries({ queryKey: ['conversations'] })
+      }
+    }
+  })
 
   useEffect(() => {
     if (conversations.length && !selectedId) setSelectedId(conversations[0]?.id ?? null)
@@ -144,6 +158,9 @@ export function ChatsPage() {
   const [showLabelDialog, setShowLabelDialog] = useState(false)
   const [ticketTitle, setTicketTitle] = useState('')
   const [rightPanelSection, setRightPanelSection] = useState<'info' | 'history' | 'labels'>('info')
+  const [aiMode, setAiMode] = useState(false)
+  const [streamingText, setStreamingText] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Map API conversations to local Convo shape
@@ -204,11 +221,28 @@ export function ChatsPage() {
 
   async function sendReply() {
     if (!reply.trim() || !selectedId) return
-    try {
-      await sendMessage.mutateAsync({ conversationId: selectedId, text: reply })
-    } catch { /* demo mode — no-op */ }
+    const text = reply
     setReply('')
     setShowCanned(false)
+
+    if (aiMode && noteType === 'reply') {
+      // AI-powered reply: stream Claude's response
+      setIsStreaming(true)
+      setStreamingText('')
+      try {
+        await aiReply.mutateAsync({
+          conversationId: selectedId,
+          text,
+          onChunk: (chunk) => setStreamingText((prev) => prev + chunk),
+        })
+      } catch { /* show error gracefully */ }
+      setIsStreaming(false)
+      setStreamingText('')
+    } else {
+      try {
+        await sendMessage.mutateAsync({ conversationId: selectedId, text })
+      } catch { /* demo mode — no-op */ }
+    }
   }
 
   async function resolveConvo() {
@@ -463,12 +497,29 @@ export function ChatsPage() {
                 )}
               </div>
             ))}
+
+            {/* Streaming AI response in progress */}
+            {isStreaming && (
+              <div className="flex gap-2.5 flex-row-reverse">
+                <Avatar name="YBot" size="sm" />
+                <div className="max-w-[70%] items-end flex flex-col">
+                  <div className="flex items-center gap-2 mb-1 flex-row-reverse">
+                    <span className="text-xs font-medium text-[var(--text-secondary)]">YBot (AI)</span>
+                    <Loader2 size={11} className="animate-spin text-[var(--accent)]" />
+                  </div>
+                  <div className="rounded-[var(--radius-md)] px-3 py-2 text-sm bg-[var(--accent-muted)] text-[var(--text-primary)] border border-[var(--accent)]/20">
+                    {streamingText || <span className="animate-pulse">●●●</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
 
           {/* Reply box */}
           <div className="border-t border-[var(--border)] shrink-0">
-            {/* Note/reply toggle */}
+            {/* Note/reply toggle + AI mode */}
             <div className="flex items-center gap-2 px-4 pt-3 pb-1">
               <button
                 onClick={() => setNoteType('reply')}
@@ -492,6 +543,21 @@ export function ChatsPage() {
               >
                 <StickyNote size={12} /> Internal note
               </button>
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  onClick={() => setAiMode(!aiMode)}
+                  title={aiMode ? 'AI reply mode active — click to disable' : 'Enable AI reply mode (RAG + Claude)'}
+                  className={cn(
+                    'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium transition-colors border',
+                    aiMode
+                      ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/40'
+                      : 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+                  )}
+                >
+                  <Bot size={12} />
+                  {aiMode ? 'AI On' : 'AI'}
+                </button>
+              </div>
             </div>
 
             {/* Canned response suggestions */}
@@ -545,13 +611,13 @@ export function ChatsPage() {
                   <span className="text-[10px] text-[var(--text-muted)]">⌘↵ to send</span>
                   <Button
                     size="sm"
-                    disabled={!reply.trim()}
+                    disabled={!reply.trim() || isStreaming}
                     onClick={sendReply}
                     variant={noteType === 'note' ? 'secondary' : 'default'}
                     className="gap-1.5"
                   >
-                    <Send size={12} />
-                    {noteType === 'note' ? 'Add note' : 'Send'}
+                    {isStreaming ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                    {isStreaming ? 'Generating…' : noteType === 'note' ? 'Add note' : aiMode ? 'AI Reply' : 'Send'}
                   </Button>
                 </div>
               </div>

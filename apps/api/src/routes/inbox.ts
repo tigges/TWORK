@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { PrismaClient } from '@ybot/db'
 import { z } from 'zod'
 import { processInboundMessage } from '../runtime-bridge.js'
+import { ragSearch } from '../rag.js'
+import { createLlmAdapter } from '@ybot/llm'
 
 const prisma = new PrismaClient()
 type JWT = { sub: string; tenantId: string; role: string }
@@ -95,6 +97,101 @@ export async function conversationsRoutes(app: FastifyInstance) {
     }
 
     return reply.status(201).send({ data: msg })
+  })
+
+  // POST /conversations/:id/ai-reply
+  // Streams a RAG-augmented Claude response back via Server-Sent Events,
+  // then saves the complete bot message and broadcasts it over WebSocket.
+  app.post('/:id/ai-reply', async (request, reply) => {
+    const { tenantId } = request.user as JWT
+    const { id: conversationId } = request.params as { id: string }
+
+    const body = z.object({
+      text: z.string().min(1),
+      systemPrompt: z.string().optional(),
+    }).safeParse(request.body)
+    if (!body.success) return reply.status(400).send({ error: { code: 'VALIDATION' } })
+
+    const convo = await prisma.conversation.findFirst({
+      where: { id: conversationId, tenantId },
+      include: {
+        bot: true,
+        messages: { orderBy: { createdAt: 'asc' }, take: 10 },
+      },
+    })
+    if (!convo) return reply.status(404).send({ error: { code: 'NOT_FOUND' } })
+
+    // Fetch recent history to give Claude context
+    const history = (convo.messages ?? []).map((m) => ({
+      role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: (m.content as { text: string }).text ?? '',
+    }))
+
+    // Save the inbound user message first
+    await prisma.message.create({
+      data: { tenantId, conversationId, direction: 'inbound', authorKind: 'user', content: { text: body.data.text } },
+    })
+
+    // RAG: search knowledge base
+    const chunks = await ragSearch(body.data.text, tenantId, convo.botId)
+    const contextBlock = chunks.length
+      ? chunks.map((c, i) => `[${i + 1}] ${c.content}`).join('\n\n')
+      : ''
+
+    const systemPrompt = [
+      body.data.systemPrompt ?? `You are a helpful AI assistant for ${convo.bot?.name ?? 'this service'}. Be concise, accurate, and friendly.`,
+      ...(contextBlock
+        ? [
+            '',
+            'Use the following knowledge base excerpts to answer the question. If the answer is not covered, acknowledge it politely and offer to escalate.',
+            '',
+            '--- KNOWLEDGE BASE ---',
+            contextBlock,
+            '--- END ---',
+          ]
+        : []),
+    ].join('\n')
+
+    // Set SSE headers
+    reply.raw.setHeader('Content-Type', 'text/event-stream')
+    reply.raw.setHeader('Cache-Control', 'no-cache')
+    reply.raw.setHeader('Connection', 'keep-alive')
+    reply.raw.setHeader('X-Accel-Buffering', 'no')
+    reply.raw.flushHeaders?.()
+
+    const llm = createLlmAdapter()
+    let fullContent = ''
+
+    try {
+      await llm.complete({
+        messages: [
+          ...history,
+          { role: 'user', content: body.data.text },
+        ],
+        systemPrompt,
+        stream: true,
+        temperature: 0.3,
+        onChunk: (chunk) => {
+          fullContent += chunk
+          reply.raw.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`)
+        },
+      })
+    } catch (err) {
+      const errMsg = "I'm sorry, I'm having trouble right now. Please try again."
+      fullContent = errMsg
+      reply.raw.write(`data: ${JSON.stringify({ type: 'chunk', text: errMsg })}\n\n`)
+      app.log.error({ err }, 'LLM streaming error')
+    }
+
+    // Save complete bot message and broadcast
+    const saved = await prisma.message.create({
+      data: { tenantId, conversationId, direction: 'outbound', authorKind: 'bot', content: { text: fullContent } },
+    })
+    await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } })
+    app.broadcastToTenant(tenantId, { event: 'message.created', data: saved })
+
+    reply.raw.write(`data: ${JSON.stringify({ type: 'done', messageId: saved.id, sources: chunks.length })}\n\n`)
+    reply.raw.end()
   })
 
   // POST /conversations/:id/labels

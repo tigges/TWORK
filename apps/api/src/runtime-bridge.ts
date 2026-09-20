@@ -124,11 +124,8 @@ export async function processInboundMessage(
       const saved = await prisma.message.create({
         data: { tenantId, conversationId, direction: 'outbound', authorKind: 'bot', content: msg.content },
       })
-      // Broadcast via WebSocket if available
-      if ((app as unknown as { broadcastToTenant?: (t: string, d: unknown) => void }).broadcastToTenant) {
-        (app as unknown as { broadcastToTenant: (t: string, d: unknown) => void })
-          .broadcastToTenant(tenantId, { event: 'message.created', data: saved })
-      }
+      // Broadcast via WebSocket
+      app.broadcastToTenant(tenantId, { event: 'message.created', data: saved })
     }
 
     if (result.handover) {

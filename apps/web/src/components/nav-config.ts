@@ -14,6 +14,7 @@ import {
   FileText,
   Repeat2,
   Server,
+  PlayCircle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -66,6 +67,12 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: 'kb-sources', label: 'Sources', path: '/build/knowledge/sources' },
           { id: 'kb-training', label: 'Training', path: '/build/knowledge/training' },
         ],
+      },
+      {
+        id: 'preview',
+        label: 'Preview',
+        icon: PlayCircle,
+        path: '/build/preview',
       },
     ],
   },

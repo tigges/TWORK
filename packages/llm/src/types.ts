@@ -10,7 +10,10 @@ export interface LlmCompleteParams {
   temperature?: number
   maxTokens?: number
   systemPrompt?: string
-  stream?: false
+  /** When true, onChunk is called for each streaming token instead of buffering. */
+  stream?: boolean
+  /** Called for each token chunk when stream=true. */
+  onChunk?: (chunk: string) => void
 }
 
 export interface LlmCompleteResult {

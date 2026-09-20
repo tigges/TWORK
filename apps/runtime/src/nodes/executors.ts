@@ -128,16 +128,42 @@ export async function executeSearchKnowledge(ctx: NodeContext): Promise<NodeResu
     contact: session.variables.contact,
   })
   try {
-    // pgvector RAG query via the db service (requires vector extension and embedding column)
-    const results = await services.db.$queryRawUnsafe<Array<{ id: string; content: string; similarity: number }>>(
-      `SELECT id, content, 1 - (embedding <=> $1::vector) AS similarity
-       FROM "DocumentChunk"
-       WHERE tenant_id = $2
-       ORDER BY embedding <=> $1::vector
-       LIMIT 3`,
-      JSON.stringify((await services.llm.embed({ texts: [query] })).embeddings[0] ?? []),
-      session.tenantId,
-    )
+    let results: Array<{ id: string; content: string; similarity: number }> = []
+
+    // Try vector similarity search first
+    try {
+      const embedResult = await services.llm.embed({ texts: [query] })
+      const embedding = embedResult.embeddings[0] ?? []
+      if (embedding.length > 0) {
+        results = await services.db.$queryRawUnsafe<Array<{ id: string; content: string; similarity: number }>>(
+          `SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) AS similarity
+           FROM   "document_chunks" dc
+           JOIN   "documents"       d  ON d.id = dc."documentId"
+           JOIN   "knowledge_sources" ks ON ks.id = d."knowledgeSourceId"
+           WHERE  dc."tenantId" = $2
+             AND  dc.embedding IS NOT NULL
+           ORDER  BY dc.embedding <=> $1::vector
+           LIMIT  3`,
+          JSON.stringify(embedding),
+          session.tenantId,
+        )
+      }
+    } catch {
+      // Fall back to full-text search when embeddings are unavailable
+      results = await services.db.$queryRawUnsafe<Array<{ id: string; content: string; similarity: number }>>(
+        `SELECT dc.id, dc.content,
+                ts_rank(to_tsvector('english', dc.content), plainto_tsquery('english', $1)) AS similarity
+         FROM   "document_chunks" dc
+         JOIN   "documents"       d  ON d.id = dc."documentId"
+         WHERE  dc."tenantId" = $2
+           AND  to_tsvector('english', dc.content) @@ plainto_tsquery('english', $1)
+         ORDER  BY similarity DESC
+         LIMIT  3`,
+        query,
+        session.tenantId,
+      )
+    }
+
     if (results.length === 0) {
       const fallback = String(config['fallback'] ?? "I'm sorry, I couldn't find an answer to that. Let me connect you with an agent.")
       return { output: { answer: fallback, sources: [] }, newMessages: [{ direction: 'outbound', content: { text: fallback } }] }

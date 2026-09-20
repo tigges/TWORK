@@ -3,6 +3,7 @@
  * Automatically falls back to demo data when the backend is unreachable.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import React from 'react'
 import * as api from './api'
 import * as demo from './demo-data'
 import { useAppStore } from '../store/app'
@@ -202,6 +203,51 @@ export function useSaveTraining() {
 }
 
 // ── Conversations ─────────────────────────────────────────────────────────────
+
+/**
+ * Maintains a WebSocket connection to the API for real-time message delivery.
+ * Calls onEvent whenever a server event (e.g. message.created) is received.
+ */
+export function useRealtimeSocket(
+  onEvent: (event: { event: string; data: api.Message & { conversationId: string } }) => void,
+) {
+  const token = useAppStore((s) => s.token)
+
+  React.useEffect(() => {
+    if (isDemoMode() || !token) return
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
+
+    let ws: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let stopped = false
+
+    function connect() {
+      ws = new WebSocket(wsUrl)
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data as string) as { type?: string; event?: string; data?: api.Message & { conversationId: string } }
+          if (msg.event) onEvent(msg as { event: string; data: api.Message & { conversationId: string } })
+        } catch { /* ignore */ }
+      }
+      ws.onclose = () => {
+        if (!stopped) reconnectTimer = setTimeout(connect, 3000)
+      }
+      ws.onerror = () => ws?.close()
+    }
+
+    connect()
+
+    return () => {
+      stopped = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      ws?.close()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+}
+
 export function useConversations(params?: Record<string, string>) {
   return useQuery({
     queryKey: ['conversations', params],
@@ -229,6 +275,28 @@ export function useSendMessage() {
   return useMutation({
     mutationFn: ({ conversationId, text }: { conversationId: string; text: string }) =>
       api.conversations.messages.send(conversationId, { text }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['conversation', v.conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+}
+
+/** Calls the AI reply endpoint and streams Claude's response back, token by token. */
+export function useAiReply() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      text,
+      onChunk,
+      systemPrompt,
+    }: {
+      conversationId: string
+      text: string
+      onChunk: (chunk: string) => void
+      systemPrompt?: string
+    }) => api.conversations.aiReply(conversationId, text, onChunk, systemPrompt),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['conversation', v.conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })

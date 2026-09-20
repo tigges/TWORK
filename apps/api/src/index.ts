@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
+import websocket from '@fastify/websocket'
 import { authRoutes } from './routes/auth.js'
 import { meRoutes } from './routes/me.js'
 import { botsRoutes } from './routes/bots.js'
@@ -14,6 +15,7 @@ import { channelsRoutes, webhooksRoutes, teamRoutes, analyticsRoutes, auditRoute
 import { startKnowledgeSyncWorker } from './workers/knowledge-sync.js'
 import { systemRoutes } from './routes/system.js'
 import { authMiddleware } from './middleware/auth.js'
+import { wsRoutes, broadcastToTenant } from './ws.js'
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
 const HOST = process.env['HOST'] ?? '0.0.0.0'
@@ -42,7 +44,11 @@ await app.register(jwt, {
   cookie: { cookieName: 'ybot_token', signed: false },
 })
 
+await app.register(websocket)
+
 app.decorate('authenticate', authMiddleware)
+// Make broadcastToTenant available on the app instance for runtime-bridge
+app.decorate('broadcastToTenant', broadcastToTenant)
 
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
 
@@ -63,6 +69,7 @@ await app.register(teamRoutes, { prefix: '/api/v1/team' })
 await app.register(analyticsRoutes, { prefix: '/api/v1/analytics' })
 await app.register(auditRoutes, { prefix: '/api/v1/audit' })
 await app.register(systemRoutes, { prefix: '/api/v1/system' })
+await app.register(wsRoutes, { prefix: '' })
 
 try {
   await app.listen({ port: PORT, host: HOST })

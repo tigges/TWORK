@@ -34,6 +34,49 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return json
 }
 
+/** POST to a streaming SSE endpoint, calling onChunk for each text delta. */
+export async function streamSse<T extends { sources?: number; messageId?: string }>(
+  path: string,
+  body: object,
+  onChunk: (chunk: string) => void,
+): Promise<T> {
+  const token = getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error: { code: string; message: string } }
+    throw new ApiError(res.status, err.error)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('No response body')
+  const decoder = new TextDecoder()
+  let result: T = { sources: 0 } as T
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const text = decoder.decode(value, { stream: true })
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const event = JSON.parse(line.slice(6)) as { type: string; text?: string; sources?: number; messageId?: string }
+        if (event.type === 'chunk' && event.text) onChunk(event.text)
+        if (event.type === 'done') result = { ...result, sources: event.sources ?? 0, messageId: event.messageId }
+      } catch { /* malformed line */ }
+    }
+  }
+  return result
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const auth = {
   login: (email: string, password: string) =>
@@ -57,6 +100,18 @@ export const bots = {
   get: (id: string) => apiFetch<{ data: BotSummary }>(`/bots/${id}`),
   create: (name: string, description?: string) =>
     apiFetch<{ data: BotSummary }>('/bots', { method: 'POST', body: JSON.stringify({ name, description }) }),
+  /** POST /bots/:botId/preview-chat — streams SSE tokens, resolves when done. */
+  previewChat: (
+    botId: string,
+    text: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }>,
+    onChunk: (chunk: string) => void,
+    systemPrompt?: string,
+  ): Promise<{ sources: number }> => streamSse(
+    `/bots/${botId}/preview-chat`,
+    { text, history, ...(systemPrompt ? { systemPrompt } : {}) },
+    onChunk,
+  ),
 }
 
 // ── Flows ─────────────────────────────────────────────────────────────────────
@@ -121,6 +176,17 @@ export const conversations = {
     send: (id: string, content: { text: string }, authorKind = 'agent') =>
       apiFetch<{ data: Message }>(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify({ content, authorKind }) }),
   },
+  /** POST /conversations/:id/ai-reply — streams SSE tokens back, resolves when done. */
+  aiReply: (
+    id: string,
+    text: string,
+    onChunk: (chunk: string) => void,
+    systemPrompt?: string,
+  ): Promise<{ messageId?: string; sources: number }> => streamSse(
+    `/conversations/${id}/ai-reply`,
+    { text, ...(systemPrompt ? { systemPrompt } : {}) },
+    onChunk,
+  ),
   labels: {
     add: (id: string, labelId: string) => apiFetch<{ data: unknown }>(`/conversations/${id}/labels`, { method: 'POST', body: JSON.stringify({ labelId }) }),
     remove: (id: string, labelId: string) => apiFetch<void>(`/conversations/${id}/labels/${labelId}`, { method: 'DELETE' }),
