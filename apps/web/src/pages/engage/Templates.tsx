@@ -182,7 +182,7 @@ export function TemplatesPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((t) => {
-            const st = STATUS_CONFIG[t.status]
+            const st = STATUS_CONFIG[t.status] ?? STATUS_CONFIG['draft']
             return (
               <div
                 key={t.id}
@@ -235,7 +235,7 @@ export function TemplatesPage() {
 
                 {/* Footer */}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--bg-overlay)] border-t border-[var(--border)] text-[11px] text-[var(--text-muted)]">
-                  <span>{t.language.toUpperCase()} · {t.usedIn} campaign{t.usedIn !== 1 ? 's' : ''}</span>
+                  <span>{(t.language ?? 'EN').toUpperCase()} · {t.usedIn ?? 0} campaign{(t.usedIn ?? 0) !== 1 ? 's' : ''}</span>
                   <span>Updated {t.updatedAt}</span>
                 </div>
               </div>

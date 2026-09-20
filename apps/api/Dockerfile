@@ -21,6 +21,7 @@ COPY tsconfig.base.json ./
 
 ENV DATABASE_URL=postgresql://dummy:dummy@localhost/dummy
 RUN pnpm --filter @ybot/db generate
+RUN pnpm --filter @ybot/db build
 RUN pnpm --filter @ybot/shared build
 RUN pnpm --filter @ybot/llm build
 RUN pnpm --filter @ybot/runtime build
