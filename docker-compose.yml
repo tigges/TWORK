@@ -1,0 +1,78 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# YBot — Local Dev Docker Compose
+# Usage:
+#   docker compose up -d         # Start all infra
+#   docker compose down          # Stop
+#   docker compose logs -f       # Tail logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ybot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ybot
+      POSTGRES_USER: ybot
+      POSTGRES_PASSWORD: ybotSecret123
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ybot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:7-alpine
+    container_name: ybot-valkey
+    restart: unless-stopped
+    volumes:
+      - valkey:/data
+    command: valkey-server --appendonly yes
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: ybot-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ybotadmin
+      MINIO_ROOT_PASSWORD: ybotSecret123
+    volumes:
+      - minio:/data
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Console
+
+volumes:
+  pgdata:
+  valkey:
+  minio:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# For AVIORI Synology NAS deployment, replace named volumes with bind mounts:
+#
+#  postgres:
+#    volumes:
+#      - /volume1/docker/ybot/pgdata:/var/lib/postgresql/data
+#  valkey:
+#    volumes:
+#      - /volume1/docker/ybot/valkey:/data
+#  minio:
+#    volumes:
+#      - /volume1/docker/ybot/minio:/data
+#
+# And remove the ports: sections if ports are already in use on the NAS.
+# ─────────────────────────────────────────────────────────────────────────────
