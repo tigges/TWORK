@@ -30,6 +30,8 @@ RUN pnpm --filter @ybot/api build
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
 # Root node_modules: pnpm virtual store + workspace package symlinks (Docker
