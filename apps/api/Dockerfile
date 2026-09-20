@@ -30,10 +30,18 @@ RUN pnpm --filter @ybot/api build
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
-RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
+# Root node_modules: pnpm virtual store + workspace package symlinks (Docker
+# follows symlinks so @ybot/* land as real directories with their dist/ files)
 COPY --from=builder /app/node_modules                  node_modules/
+
+# apps/api/node_modules: pnpm stores each workspace package's direct deps
+# (fastify, bullmq, ioredis, etc.) here as symlinks — Docker dereferences them
+COPY --from=builder /app/apps/api/node_modules         apps/api/node_modules/
+
+# Explicit copies of workspace package dist outputs (belt-and-suspenders in
+# case the symlink dereferencing above doesn't capture rebuilt artefacts)
 COPY --from=builder /app/packages/shared/dist          packages/shared/dist/
 COPY --from=builder /app/packages/shared/package.json  packages/shared/package.json
 COPY --from=builder /app/packages/llm/dist             packages/llm/dist/
