@@ -7,7 +7,7 @@ import type {
   Flow, FlowVersion, Intent, Entity, Faq, KnowledgeSource,
   Conversation, Message, Contact, Campaign, Template,
   Webhook, TeamMember, AnalyticsOverview, ConversationTrend, AuditEvent,
-  LlmConfig,
+  LlmConfig, SystemStatus,
 } from './api'
 
 // ── Flows ─────────────────────────────────────────────────────────────────────
@@ -325,3 +325,39 @@ export const DEMO_AUDIT: AuditEvent[] = [
   { id: 'a7', action: 'api_key.created', resource: 'api_key', metadata: { name: 'API key #1' }, createdAt: ago(360), user: { displayName: 'Charles', email: 'charles@acme.com' } },
   { id: 'a8', action: 'knowledge.synced', resource: 'knowledge_source', metadata: { pages: 284, chunks: 1204 }, createdAt: ago(480), user: { displayName: 'Anna W', email: 'anna@acme.com' } },
 ]
+
+// ── System Status ─────────────────────────────────────────────────────────────
+export const DEMO_SYSTEM_STATUS: SystemStatus = {
+  services: {
+    database: { ok: true, latencyMs: 4 },
+    redis: { ok: true, latencyMs: 1 },
+  },
+  containers: [
+    { id: 'a1b2c3d4e5f6', name: 'ybot-api', image: 'ybot-api:latest', state: 'running', status: 'Up 3 hours (healthy)' },
+    { id: 'b2c3d4e5f6a1', name: 'ybot-web', image: 'ybot-web:latest', state: 'running', status: 'Up 3 hours' },
+    { id: 'c3d4e5f6a1b2', name: 'ybot-caddy', image: 'caddy:2-alpine', state: 'running', status: 'Up 3 hours' },
+    { id: 'd4e5f6a1b2c3', name: 'ybot-postgres', image: 'pgvector/pgvector:pg16', state: 'running', status: 'Up 3 hours (healthy)' },
+    { id: 'e5f6a1b2c3d4', name: 'ybot-valkey', image: 'valkey/valkey:7-alpine', state: 'running', status: 'Up 3 hours (healthy)' },
+    { id: 'f6a1b2c3d4e5', name: 'ybot-minio', image: 'quay.io/minio/minio:latest', state: 'running', status: 'Up 3 hours (healthy)' },
+  ],
+  rag: {
+    sources: 3,
+    documents: 284,
+    chunks: 1204,
+    sourceList: [
+      { id: 'ks1', name: 'Help Center', lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), _count: { documents: 148 } },
+      { id: 'ks2', name: 'Product FAQ', lastSyncAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), _count: { documents: 89 } },
+      { id: 'ks3', name: 'Policy Documents', lastSyncAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), _count: { documents: 47 } },
+    ],
+  },
+  system: {
+    platform: 'linux',
+    uptime: 11520,
+    nodeVersion: 'v22.0.0',
+    cpuCount: 4,
+    totalMemMb: 8192,
+    freeMemMb: 3276,
+    usedMemPct: 60,
+  },
+  ts: new Date().toISOString(),
+}

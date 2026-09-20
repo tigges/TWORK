@@ -12,6 +12,7 @@ import { conversationsRoutes, ticketsRoutes, contactsRoutes } from './routes/inb
 import { campaignsRoutes, templatesRoutes } from './routes/engage.js'
 import { channelsRoutes, webhooksRoutes, teamRoutes, analyticsRoutes, auditRoutes } from './routes/config.js'
 import { startKnowledgeSyncWorker } from './workers/knowledge-sync.js'
+import { systemRoutes } from './routes/system.js'
 import { authMiddleware } from './middleware/auth.js'
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
@@ -61,6 +62,7 @@ await app.register(webhooksRoutes, { prefix: '/api/v1/webhooks' })
 await app.register(teamRoutes, { prefix: '/api/v1/team' })
 await app.register(analyticsRoutes, { prefix: '/api/v1/analytics' })
 await app.register(auditRoutes, { prefix: '/api/v1/audit' })
+await app.register(systemRoutes, { prefix: '/api/v1/system' })
 
 try {
   await app.listen({ port: PORT, host: HOST })

@@ -36,6 +36,7 @@ import { DatabasePage } from '../pages/configure/Database'
 import { WebhooksPage } from '../pages/configure/Webhooks'
 import { TeamPage } from '../pages/admin/Team'
 import { AuditPage } from '../pages/admin/Audit'
+import { SystemStatusPage } from '../pages/admin/SystemStatus'
 import { SettingsPage } from '../pages/Settings'
 import { BotNewPage } from '../pages/BotNew'
 
@@ -130,6 +131,7 @@ const webhooksRoute = createRoute({ getParentRoute: () => appRoute, path: '/conf
 // ── Admin ─────────────────────────────────────────────────────────────────────
 const teamRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin/team', component: TeamPage })
 const auditRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin/audit', component: AuditPage })
+const systemStatusRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin/system-status', component: SystemStatusPage })
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsPage })
@@ -168,6 +170,7 @@ const routeTree = rootRoute.addChildren([
     webhooksRoute,
     teamRoute,
     auditRoute,
+    systemStatusRoute,
     settingsRoute,
   ]),
 ])
