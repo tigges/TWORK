@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddyfile — Reverse proxy for YBot stack
+# Replace "ybot.yourdomain.com" with your actual domain
+# For local/NAS use without TLS, replace with: http://localhost
+# ─────────────────────────────────────────────────────────────────────────────
+
+ybot.yourdomain.com {
+    # Automatic HTTPS via Let's Encrypt (comment out for local/NAS use)
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    # API proxy — all /api/* and /ws requests
+    handle /api/* {
+        reverse_proxy ybot-api:3001
+    }
+
+    handle /ws {
+        reverse_proxy ybot-api:3001 {
+            transport http {
+                dial_timeout 5s
+            }
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
+        }
+    }
+
+    # MinIO console (optional admin access)
+    handle /minio/* {
+        uri strip_prefix /minio
+        reverse_proxy ybot-minio:9001
+    }
+
+    # SPA fallback — all other requests served by the web container
+    handle {
+        reverse_proxy ybot-web:80
+    }
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# ── Local / NAS variant (no TLS) ──────────────────────────────────────────────
+# http://localhost {
+#     handle /api/* { reverse_proxy ybot-api:3001 }
+#     handle /ws    { reverse_proxy ybot-api:3001 }
+#     handle        { reverse_proxy ybot-web:80 }
+# }

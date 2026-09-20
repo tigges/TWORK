@@ -1,1 +1,1 @@
-export { WebhooksPage } from './Channels'
+export { WebhooksPage } from './WebhooksImpl'
