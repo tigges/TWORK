@@ -97,6 +97,7 @@ const overviewRoute = createRoute({
 const flowsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/flows', component: FlowsPage })
 const flowCanvasRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/flows/$flowId', component: FlowCanvasPage })
 const workflowsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/workflows', component: WorkflowsPage })
+const knowledgeRedirectRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge', beforeLoad: () => { throw redirect({ to: '/build/knowledge/intents' }) }, component: () => null })
 const intentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/intents', component: IntentsPage })
 const entitiesRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/entities', component: EntitiesPage })
 const faqsRoute = createRoute({ getParentRoute: () => appRoute, path: '/build/knowledge/faqs', component: FaqsPage })
@@ -149,6 +150,7 @@ const routeTree = rootRoute.addChildren([
     faqsRoute,
     sourcesRoute,
     trainingRoute,
+    knowledgeRedirectRoute,
     inboxRoute,
     chatsRoute,
     ticketsRoute,

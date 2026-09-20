@@ -1,6 +1,17 @@
-import React, { useState } from 'react'
-import { MessageSquare, Search, Filter, ChevronRight, Clock } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import {
+  Search, Filter, ChevronDown, Paperclip, Smile, Send,
+  AlertCircle, Clock, CheckCheck, MoreHorizontal, Tag,
+  UserPlus, ArrowRightLeft, Ticket, StickyNote, MessageCircle,
+  Phone, Mail, Globe, Hash, ChevronRight, X, Mic,
+  Circle, Zap, Star,
+} from 'lucide-react'
 import { Avatar, Badge, Input, Button } from '@ybot/ui'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
+} from '@ybot/ui'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
 
@@ -11,33 +22,194 @@ const SUBNAV = [
   { label: 'Settings', path: '/inbox/settings' },
 ]
 
-const MOCK_CONVOS = [
-  { id: '1', name: 'Alice Johnson', message: 'I need help with my order', time: '2m', status: 'active', unread: 3, channel: 'web', assignee: null },
-  { id: '2', name: 'Bob Smith', message: 'How do I track my shipment?', time: '8m', status: 'active', unread: 1, channel: 'whatsapp', assignee: 'Sarah' },
-  { id: '3', name: 'Carol White', message: 'Thanks for the help!', time: '24m', status: 'resolved', unread: 0, channel: 'web', assignee: 'Sarah' },
-  { id: '4', name: 'David Lee', message: 'Product not delivered yet', time: '1h', status: 'escalated', unread: 2, channel: 'sms', assignee: null },
-  { id: '5', name: 'Eve Brown', message: 'Can I change my address?', time: '2h', status: 'active', unread: 0, channel: 'web', assignee: 'Mike' },
+type ConvoStatus = 'active' | 'resolved' | 'escalated' | 'pending' | 'bot'
+type View = 'all' | 'mine' | 'unassigned' | 'escalated'
+type NoteType = 'reply' | 'note'
+
+const AGENTS = ['Sarah K', 'Mike R', 'Tom B', 'Unassigned']
+
+interface Convo {
+  id: string
+  name: string
+  message: string
+  time: string
+  status: ConvoStatus
+  unread: number
+  channel: 'web' | 'whatsapp' | 'sms' | 'email'
+  assignee: string | null
+  sla?: string
+  labels?: string[]
+  email?: string
+  phone?: string
+  location?: string
+  previousConvos?: number
+}
+
+interface Message {
+  id: string
+  from: 'user' | 'bot' | 'agent'
+  name: string
+  text: string
+  time: string
+  isNote?: boolean
+}
+
+const MOCK_CONVOS: Convo[] = [
+  { id: '1', name: 'Alice Johnson', message: 'Hi! I need help with my order #12345', time: '2m', status: 'active', unread: 3, channel: 'web', assignee: null, sla: '12m left', labels: ['billing', 'urgent'], email: 'alice@example.com', phone: '+44 7700 900123', location: 'London, UK', previousConvos: 3 },
+  { id: '2', name: 'Bob Smith', message: 'How do I track my shipment?', time: '8m', status: 'active', unread: 1, channel: 'whatsapp', assignee: 'Sarah K', sla: '28m left', email: 'bob@example.com', phone: '+44 7700 900456', previousConvos: 1 },
+  { id: '3', name: 'Carol White', message: 'Thanks for the help!', time: '24m', status: 'resolved', unread: 0, channel: 'web', assignee: 'Sarah K', email: 'carol@example.com', previousConvos: 5 },
+  { id: '4', name: 'David Lee', message: 'Product not delivered yet', time: '1h', status: 'escalated', unread: 2, channel: 'sms', assignee: null, sla: 'Breached', labels: ['delivery', 'priority'], email: 'david@example.com', phone: '+44 7700 900789', previousConvos: 2 },
+  { id: '5', name: 'Eve Brown', message: 'Can I change my delivery address?', time: '2h', status: 'active', unread: 0, channel: 'web', assignee: 'Mike R', sla: '1h 14m left', email: 'eve@example.com', previousConvos: 0 },
+  { id: '6', name: 'Frank Moore', message: 'I was charged twice for my order', time: '3h', status: 'pending', unread: 0, channel: 'email', assignee: 'Tom B', sla: '45m left', labels: ['billing'], email: 'frank@example.com', previousConvos: 1 },
 ]
 
-const MOCK_MESSAGES = [
+const MOCK_MESSAGES: Message[] = [
   { id: '1', from: 'user', name: 'Alice Johnson', text: 'Hi! I need help with my order #12345', time: '10:32 AM' },
   { id: '2', from: 'bot', name: 'YBot', text: 'Hello! I can help you with that. Can you please share your order number?', time: '10:32 AM' },
-  { id: '3', from: 'user', name: 'Alice Johnson', text: 'It\'s order #12345, placed 3 days ago', time: '10:33 AM' },
-  { id: '4', from: 'bot', name: 'YBot', text: 'I found your order. It\'s currently in transit and expected to arrive tomorrow by 6 PM.', time: '10:33 AM' },
+  { id: '3', from: 'user', name: 'Alice Johnson', text: "It's order #12345, placed 3 days ago", time: '10:33 AM' },
+  { id: '4', from: 'bot', name: 'YBot', text: "I found your order. It's currently in transit and expected to arrive tomorrow by 6 PM.", time: '10:33 AM' },
   { id: '5', from: 'user', name: 'Alice Johnson', text: 'Great, thank you! Can I change the delivery address?', time: '10:35 AM' },
   { id: '6', from: 'agent', name: 'Sarah K', text: 'Hi Alice! Sarah here. I can definitely help you update the delivery address. Could you share the new address?', time: '10:36 AM' },
 ]
 
-export function ChatsPage() {
-  const [selectedId, setSelectedId] = useState<string | null>('1')
-  const [reply, setReply] = useState('')
+const CANNED_RESPONSES = [
+  { id: '1', shortcut: '/greeting', text: 'Hi! Thanks for reaching out. How can I help you today?' },
+  { id: '2', shortcut: '/thanks', text: "Thank you for your patience! I've resolved the issue. Is there anything else I can help with?" },
+  { id: '3', shortcut: '/transfer', text: "I'm going to transfer you to a specialist who can better assist you with this issue." },
+  { id: '4', shortcut: '/wait', text: "I'm looking into this for you right now. Please give me a moment." },
+  { id: '5', shortcut: '/close', text: "We're glad we could help! This conversation will now be closed. Feel free to reach out anytime." },
+]
 
-  const selected = MOCK_CONVOS.find((c) => c.id === selectedId)
+const LABELS_OPTIONS = ['billing', 'delivery', 'urgent', 'priority', 'technical', 'refund']
+
+function SlaChip({ sla }: { sla?: string }) {
+  if (!sla) return null
+  const breached = sla === 'Breached'
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full',
+      breached
+        ? 'bg-[var(--error-muted)] text-[var(--error)]'
+        : 'bg-[var(--warning-muted,#2d2000)] text-[var(--warning,#fbbf24)]'
+    )}>
+      <Clock size={9} />
+      {sla}
+    </span>
+  )
+}
+
+function ChannelIcon({ ch }: { ch: string }) {
+  const icons: Record<string, React.ReactNode> = {
+    web: <Globe size={11} />,
+    whatsapp: <MessageCircle size={11} />,
+    sms: <Phone size={11} />,
+    email: <Mail size={11} />,
+  }
+  return <span className="text-[var(--text-muted)]">{icons[ch] ?? <Globe size={11} />}</span>
+}
+
+export function ChatsPage() {
+  const [selectedId, setSelectedId] = useState<string>('1')
+  const [reply, setReply] = useState('')
+  const [noteType, setNoteType] = useState<NoteType>('reply')
+  const [view, setView] = useState<View>('all')
+  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
+  const [convos, setConvos] = useState<Convo[]>(MOCK_CONVOS)
+  const [showCanned, setShowCanned] = useState(false)
+  const [cannedFilter, setCannedFilter] = useState('')
+  const [showAssign, setShowAssign] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
+  const [showTicketDialog, setShowTicketDialog] = useState(false)
+  const [showLabelDialog, setShowLabelDialog] = useState(false)
+  const [ticketTitle, setTicketTitle] = useState('')
+  const [rightPanelSection, setRightPanelSection] = useState<'info' | 'history' | 'labels'>('info')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const selected = convos.find((c) => c.id === selectedId)!
+
+  const filteredConvos = convos.filter((c) => {
+    if (view === 'mine') return c.assignee === 'Sarah K'
+    if (view === 'unassigned') return !c.assignee
+    if (view === 'escalated') return c.status === 'escalated'
+    return true
+  })
+
+  const filteredCanned = CANNED_RESPONSES.filter((r) =>
+    r.shortcut.includes(cannedFilter) || r.text.toLowerCase().includes(cannedFilter.toLowerCase())
+  )
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, selectedId])
+
+  function handleReplyChange(val: string) {
+    setReply(val)
+    if (val.startsWith('/')) {
+      setShowCanned(true)
+      setCannedFilter(val.slice(1))
+    } else {
+      setShowCanned(false)
+    }
+  }
+
+  function applyCanned(text: string) {
+    setReply(text)
+    setShowCanned(false)
+  }
+
+  function sendReply() {
+    if (!reply.trim()) return
+    const msg: Message = {
+      id: String(Date.now()),
+      from: 'agent',
+      name: 'Sarah K',
+      text: reply,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isNote: noteType === 'note',
+    }
+    setMessages((prev) => [...prev, msg])
+    setReply('')
+    setShowCanned(false)
+    if (noteType === 'reply') {
+      setConvos((prev) => prev.map((c) => c.id === selectedId ? { ...c, unread: 0 } : c))
+    }
+  }
+
+  function resolveConvo() {
+    setConvos((prev) => prev.map((c) => c.id === selectedId
+      ? { ...c, status: c.status === 'resolved' ? 'active' : 'resolved' }
+      : c
+    ))
+  }
+
+  function assignTo(agent: string) {
+    setConvos((prev) => prev.map((c) => c.id === selectedId
+      ? { ...c, assignee: agent === 'Unassigned' ? null : agent }
+      : c
+    ))
+    setShowAssign(false)
+  }
+
+  function createTicket() {
+    if (!ticketTitle.trim()) return
+    setShowTicketDialog(false)
+    setTicketTitle('')
+    // In production this would POST to API
+  }
+
+  const statusVariant: Record<ConvoStatus, 'info' | 'success' | 'error' | 'warning' | 'muted'> = {
+    active: 'info',
+    resolved: 'success',
+    escalated: 'error',
+    pending: 'warning',
+    bot: 'muted',
+  }
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Conversation list */}
-      <div className="flex w-80 flex-col border-r border-[var(--border)] bg-[var(--bg-surface)] shrink-0">
+      {/* ── Left: conversation list ───────────────────────────── */}
+      <div className="flex w-[280px] flex-col border-r border-[var(--border)] bg-[var(--bg-surface)] shrink-0">
+        {/* Header + subnav */}
         <div className="border-b border-[var(--border)]">
           <div className="px-4 pt-4 pb-0">
             <h1 className="text-base font-semibold text-[var(--text-primary)]">Inbox</h1>
@@ -45,34 +217,75 @@ export function ChatsPage() {
           <SubNav items={SUBNAV} />
         </div>
 
-        <div className="p-3 border-b border-[var(--border)]">
-          <Input
-            placeholder="Search conversations…"
-            leftIcon={<Search size={13} />}
-          />
+        {/* Views + search */}
+        <div className="p-3 space-y-2 border-b border-[var(--border)]">
+          <Input placeholder="Search conversations…" leftIcon={<Search size={13} />} />
+          <div className="flex gap-1">
+            {(['all', 'mine', 'unassigned', 'escalated'] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={cn(
+                  'flex-1 rounded py-0.5 text-[11px] font-medium capitalize transition-colors',
+                  view === v
+                    ? 'bg-[var(--accent)] text-white'
+                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+                )}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* Sort + count */}
+        <div className="flex items-center justify-between px-3 py-1.5">
+          <span className="text-[11px] text-[var(--text-muted)]">{filteredConvos.length} conversations</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-0.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                Newest <ChevronDown size={10} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>Newest first</DropdownMenuItem>
+              <DropdownMenuItem>Oldest first</DropdownMenuItem>
+              <DropdownMenuItem>SLA: Urgent first</DropdownMenuItem>
+              <DropdownMenuItem>Unread first</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Conversation items */}
         <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]">
-          {MOCK_CONVOS.map((conv) => (
+          {filteredConvos.map((conv) => (
             <button
               key={conv.id}
               onClick={() => setSelectedId(conv.id)}
               className={cn(
-                'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
+                'flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors',
                 selectedId === conv.id ? 'bg-[var(--bg-selected)]' : 'hover:bg-[var(--bg-hover)]'
               )}
             >
-              <Avatar name={conv.name} size="md" />
+              <div className="relative shrink-0 mt-0.5">
+                <Avatar name={conv.name} size="sm" />
+                <span className={cn(
+                  'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--bg-surface)]',
+                  conv.status === 'active' ? 'bg-[var(--success)]' :
+                  conv.status === 'escalated' ? 'bg-[var(--error)]' :
+                  conv.status === 'pending' ? 'bg-[var(--warning,#fbbf24)]' :
+                  'bg-[var(--text-muted)]'
+                )} />
+              </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-[var(--text-primary)] truncate">{conv.name}</span>
-                  <span className="text-xs text-[var(--text-muted)] shrink-0 ml-2">{conv.time}</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[13px] font-medium text-[var(--text-primary)] truncate">{conv.name}</span>
+                  <span className="text-[11px] text-[var(--text-muted)] shrink-0">{conv.time}</span>
                 </div>
-                <p className="mt-0.5 text-xs text-[var(--text-muted)] truncate">{conv.message}</p>
-                <div className="mt-1 flex items-center gap-1">
-                  <Badge variant={conv.status === 'active' ? 'info' : conv.status === 'escalated' ? 'error' : 'success'} dot>
-                    {conv.status}
-                  </Badge>
+                <p className="mt-0.5 text-[12px] text-[var(--text-muted)] truncate">{conv.message}</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <ChannelIcon ch={conv.channel} />
+                  {conv.sla && <SlaChip sla={conv.sla} />}
                   {conv.unread > 0 && (
                     <span className="ml-auto text-[10px] font-bold text-white bg-[var(--accent)] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                       {conv.unread}
@@ -85,62 +298,230 @@ export function ChatsPage() {
         </div>
       </div>
 
-      {/* Chat thread */}
+      {/* ── Centre: chat thread ───────────────────────────────── */}
       {selected ? (
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Chat header */}
-          <div className="flex h-[var(--topbar-height)] items-center justify-between border-b border-[var(--border)] px-4 shrink-0">
-            <div className="flex items-center gap-3">
+          {/* Thread header */}
+          <div className="flex h-[var(--topbar-height)] items-center justify-between border-b border-[var(--border)] px-4 shrink-0 gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <Avatar name={selected.name} size="sm" />
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">{selected.name}</p>
-                <p className="text-xs text-[var(--text-muted)]">{selected.channel} · {selected.assignee ? `Assigned to ${selected.assignee}` : 'Unassigned'}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{selected.name}</p>
+                <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+                  <ChannelIcon ch={selected.channel} />
+                  {selected.channel}
+                  {selected.assignee
+                    ? <> · Assigned to <span className="text-[var(--text-secondary)]">{selected.assignee}</span></>
+                    : <> · <span className="text-[var(--warning,#fbbf24)]">Unassigned</span></>
+                  }
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm">Resolve</Button>
-              <Button variant="ghost" size="icon-sm"><ChevronRight size={14} /></Button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Assign */}
+              <DropdownMenu open={showAssign} onOpenChange={setShowAssign}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1.5">
+                    <UserPlus size={13} />
+                    {selected.assignee ?? 'Assign'}
+                    <ChevronDown size={11} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Assign to agent</DropdownMenuLabel>
+                  {AGENTS.map((a) => (
+                    <DropdownMenuItem key={a} onClick={() => assignTo(a)}>
+                      <Avatar name={a} size="xs" />
+                      {a}
+                      {selected.assignee === a && <CheckCheck size={13} className="ml-auto text-[var(--accent)]" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Resolve */}
+              <Button
+                variant={selected.status === 'resolved' ? 'secondary' : 'default'}
+                size="sm"
+                onClick={resolveConvo}
+              >
+                {selected.status === 'resolved' ? 'Reopen' : 'Resolve'}
+              </Button>
+
+              {/* More actions */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm"><MoreHorizontal size={15} /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowTransfer(true)}>
+                    <ArrowRightLeft size={13} /> Transfer conversation
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowTicketDialog(true)}>
+                    <Ticket size={13} /> Create ticket
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowLabelDialog(true)}>
+                    <Tag size={13} /> Manage labels
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem destructive>
+                    <X size={13} /> Delete conversation
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
+          {/* Label chips */}
+          {selected.labels && selected.labels.length > 0 && (
+            <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-[var(--border)] bg-[var(--bg-surface)]">
+              <Tag size={11} className="text-[var(--text-muted)]" />
+              {selected.labels.map((l) => (
+                <span key={l} className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border)]">
+                  {l}
+                </span>
+              ))}
+              {selected.sla && <SlaChip sla={selected.sla} />}
+            </div>
+          )}
+
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {MOCK_MESSAGES.map((msg) => (
-              <div
-                key={msg.id}
-                className={cn('flex gap-2.5', msg.from === 'user' ? 'flex-row' : 'flex-row-reverse')}
-              >
-                <Avatar name={msg.name} size="sm" />
-                <div className={cn('max-w-[70%]', msg.from === 'user' ? '' : '')}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-[var(--text-secondary)]">{msg.name}</span>
-                    <span className="text-[10px] text-[var(--text-muted)]">{msg.time}</span>
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {messages.map((msg) => (
+              <div key={msg.id}>
+                {msg.isNote ? (
+                  /* Internal note bubble */
+                  <div className="flex gap-2.5 justify-start">
+                    <Avatar name={msg.name} size="sm" />
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium text-[var(--text-secondary)]">{msg.name}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{msg.time}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--warning-muted,#2d2000)] text-[var(--warning,#fbbf24)] font-medium flex items-center gap-1">
+                          <StickyNote size={9} /> internal note
+                        </span>
+                      </div>
+                      <div className="rounded-[var(--radius-md)] px-3 py-2 text-sm bg-[var(--warning-muted,#2d2000)] border border-[var(--warning,#fbbf24)]/25 text-[var(--text-primary)] max-w-[70%]">
+                        {msg.text}
+                      </div>
+                    </div>
                   </div>
-                  <div className={cn(
-                    'rounded-[var(--radius-md)] px-3 py-2 text-sm',
-                    msg.from === 'user'
-                      ? 'bg-[var(--bg-overlay)] text-[var(--text-primary)]'
-                      : msg.from === 'bot'
-                        ? 'bg-[var(--accent-muted)] text-[var(--text-primary)] border border-[var(--accent)]/20'
-                        : 'bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border)]'
-                  )}>
-                    {msg.text}
+                ) : (
+                  <div className={cn('flex gap-2.5', msg.from === 'user' ? 'flex-row' : 'flex-row-reverse')}>
+                    <Avatar name={msg.name} size="sm" />
+                    <div className={cn('max-w-[70%]', msg.from !== 'user' && 'items-end flex flex-col')}>
+                      <div className={cn('flex items-center gap-2 mb-1', msg.from !== 'user' && 'flex-row-reverse')}>
+                        <span className="text-xs font-medium text-[var(--text-secondary)]">{msg.name}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{msg.time}</span>
+                      </div>
+                      <div className={cn(
+                        'rounded-[var(--radius-md)] px-3 py-2 text-sm',
+                        msg.from === 'user'
+                          ? 'bg-[var(--bg-overlay)] text-[var(--text-primary)]'
+                          : msg.from === 'bot'
+                            ? 'bg-[var(--accent-muted)] text-[var(--text-primary)] border border-[var(--accent)]/20'
+                            : 'bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border)]'
+                      )}>
+                        {msg.text}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Reply box */}
-          <div className="border-t border-[var(--border)] p-4 shrink-0">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Type a reply…"
+          <div className="border-t border-[var(--border)] shrink-0">
+            {/* Note/reply toggle */}
+            <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+              <button
+                onClick={() => setNoteType('reply')}
+                className={cn(
+                  'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium transition-colors',
+                  noteType === 'reply'
+                    ? 'bg-[var(--accent)] text-white'
+                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+                )}
+              >
+                <MessageCircle size={12} /> Reply
+              </button>
+              <button
+                onClick={() => setNoteType('note')}
+                className={cn(
+                  'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium transition-colors',
+                  noteType === 'note'
+                    ? 'bg-[var(--warning-muted,#2d2000)] text-[var(--warning,#fbbf24)] border border-[var(--warning,#fbbf24)]/30'
+                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+                )}
+              >
+                <StickyNote size={12} /> Internal note
+              </button>
+            </div>
+
+            {/* Canned response suggestions */}
+            {showCanned && filteredCanned.length > 0 && (
+              <div className="mx-4 mb-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-elevated)] overflow-hidden shadow-[var(--shadow-lg)] max-h-44 overflow-y-auto">
+                <div className="px-3 py-1.5 bg-[var(--bg-overlay)] border-b border-[var(--border)]">
+                  <p className="text-[11px] text-[var(--text-muted)] font-medium">Canned responses</p>
+                </div>
+                {filteredCanned.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => applyCanned(r.text)}
+                    className="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] transition-colors"
+                  >
+                    <p className="text-[11px] font-mono text-[var(--accent)]">{r.shortcut}</p>
+                    <p className="text-xs text-[var(--text-secondary)] truncate">{r.text}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className={cn(
+              'mx-4 mb-3 rounded-[var(--radius-md)] border transition-colors',
+              noteType === 'note'
+                ? 'border-[var(--warning,#fbbf24)]/40 bg-[var(--warning-muted,#2d2000)]/30'
+                : 'border-[var(--border)] bg-[var(--bg-surface)]'
+            )}>
+              <textarea
+                placeholder={noteType === 'note' ? 'Add an internal note… (not visible to customer)' : 'Type a reply… (type / for canned responses)'}
                 value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                className="flex-1"
+                onChange={(e) => handleReplyChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply()
+                }}
+                rows={3}
+                className="w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
               />
-              <Button disabled={!reply.trim()}>Send</Button>
+              <div className="flex items-center justify-between px-2 pb-2">
+                <div className="flex items-center gap-0.5">
+                  <button className="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors" title="Attach file">
+                    <Paperclip size={14} />
+                  </button>
+                  <button className="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors" title="Emoji">
+                    <Smile size={14} />
+                  </button>
+                  <button className="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors" title="Canned responses">
+                    <Zap size={14} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[var(--text-muted)]">⌘↵ to send</span>
+                  <Button
+                    size="sm"
+                    disabled={!reply.trim()}
+                    onClick={sendReply}
+                    variant={noteType === 'note' ? 'secondary' : 'default'}
+                    className="gap-1.5"
+                  >
+                    <Send size={12} />
+                    {noteType === 'note' ? 'Add note' : 'Send'}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -150,29 +531,229 @@ export function ChatsPage() {
         </div>
       )}
 
-      {/* Contact context panel */}
+      {/* ── Right: contact context panel ─────────────────────── */}
       {selected && (
-        <div className="w-64 shrink-0 border-l border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto p-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Contact Info</h3>
-          <div className="flex flex-col items-center gap-2 mb-4">
+        <div className="w-[260px] shrink-0 border-l border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto flex flex-col">
+          {/* Contact summary */}
+          <div className="flex flex-col items-center gap-2 p-4 border-b border-[var(--border)]">
             <Avatar name={selected.name} size="lg" />
-            <p className="font-medium text-[var(--text-primary)] text-sm">{selected.name}</p>
-            <Badge variant="muted">{selected.channel}</Badge>
+            <p className="font-medium text-[var(--text-primary)] text-sm text-center">{selected.name}</p>
+            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+              <Badge variant={statusVariant[selected.status]} dot>{selected.status}</Badge>
+              <Badge variant="muted"><ChannelIcon ch={selected.channel} />{selected.channel}</Badge>
+            </div>
           </div>
-          <div className="space-y-3">
-            {[
-              { label: 'Status', value: selected.status },
-              { label: 'Channel', value: selected.channel },
-              { label: 'Assigned to', value: selected.assignee ?? 'Unassigned' },
-            ].map((item) => (
-              <div key={item.label}>
-                <p className="text-[10px] font-medium uppercase text-[var(--text-muted)]">{item.label}</p>
-                <p className="text-sm text-[var(--text-primary)] mt-0.5">{item.value}</p>
-              </div>
+
+          {/* Tab strip */}
+          <div className="flex border-b border-[var(--border)]">
+            {(['info', 'history', 'labels'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setRightPanelSection(s)}
+                className={cn(
+                  'flex-1 py-2 text-[11px] font-medium capitalize transition-colors',
+                  rightPanelSection === s
+                    ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                )}
+              >
+                {s}
+              </button>
             ))}
           </div>
+
+          {rightPanelSection === 'info' && (
+            <div className="p-4 space-y-4">
+              {selected.sla && (
+                <div className="rounded-[var(--radius-md)] border border-[var(--border)] p-3 bg-[var(--bg-overlay)]">
+                  <p className="text-[10px] font-medium uppercase text-[var(--text-muted)] mb-1">SLA</p>
+                  <SlaChip sla={selected.sla} />
+                </div>
+              )}
+              <div className="space-y-3">
+                {[
+                  { label: 'Email', value: selected.email, icon: <Mail size={12} /> },
+                  { label: 'Phone', value: selected.phone, icon: <Phone size={12} /> },
+                  { label: 'Location', value: selected.location, icon: <Globe size={12} /> },
+                  { label: 'Channel', value: selected.channel, icon: <MessageCircle size={12} /> },
+                  { label: 'Assigned to', value: selected.assignee ?? 'Unassigned', icon: <UserPlus size={12} /> },
+                ].filter((item) => item.value).map((item) => (
+                  <div key={item.label} className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[var(--text-muted)]">{item.icon}</span>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase text-[var(--text-muted)]">{item.label}</p>
+                      <p className="text-xs text-[var(--text-primary)] mt-0.5">{item.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="pt-2 border-t border-[var(--border)] space-y-2">
+                <Button variant="secondary" size="sm" className="w-full gap-1.5" onClick={() => setShowTicketDialog(true)}>
+                  <Ticket size={13} /> Create ticket
+                </Button>
+                <Button variant="ghost" size="sm" className="w-full gap-1.5">
+                  <Star size={13} /> View contact profile
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {rightPanelSection === 'history' && (
+            <div className="p-4">
+              <p className="text-[11px] text-[var(--text-muted)] mb-3">
+                {selected.previousConvos ?? 0} previous conversation{selected.previousConvos !== 1 ? 's' : ''}
+              </p>
+              {(selected.previousConvos ?? 0) > 0 ? (
+                <div className="space-y-2">
+                  {Array.from({ length: Math.min(selected.previousConvos ?? 0, 4) }, (_, i) => (
+                    <div key={i} className="rounded-[var(--radius-md)] border border-[var(--border)] p-2.5 hover:bg-[var(--bg-hover)] cursor-pointer transition-colors">
+                      <div className="flex items-center justify-between mb-1">
+                        <Badge variant="muted" className="text-[10px]">#{1000 + i}</Badge>
+                        <span className="text-[10px] text-[var(--text-muted)]">{i + 1}d ago</span>
+                      </div>
+                      <p className="text-xs text-[var(--text-secondary)] truncate">Previous conversation {i + 1}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--text-muted)]">No previous conversations</p>
+              )}
+            </div>
+          )}
+
+          {rightPanelSection === 'labels' && (
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-medium text-[var(--text-muted)] uppercase">Labels</p>
+                <button
+                  onClick={() => setShowLabelDialog(true)}
+                  className="text-[11px] text-[var(--accent)] hover:underline"
+                >
+                  Edit
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(selected.labels ?? []).length > 0 ? (
+                  selected.labels!.map((l) => (
+                    <span key={l} className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--bg-overlay)] text-[var(--text-secondary)] border border-[var(--border)]">
+                      {l}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-xs text-[var(--text-muted)]">No labels added</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ── Transfer dialog ───────────────────────────────────── */}
+      <Dialog open={showTransfer} onOpenChange={setShowTransfer}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Transfer conversation</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-2">
+            <p className="text-sm text-[var(--text-secondary)] mb-3">Select an agent or team to transfer this conversation to.</p>
+            {AGENTS.filter((a) => a !== 'Unassigned').map((a) => (
+              <button
+                key={a}
+                onClick={() => { assignTo(a); setShowTransfer(false) }}
+                className="flex items-center gap-3 w-full p-3 rounded-[var(--radius-md)] border border-[var(--border)] hover:bg-[var(--bg-hover)] transition-colors text-left"
+              >
+                <Avatar name={a} size="sm" />
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">{a}</p>
+                  <p className="text-xs text-[var(--text-muted)]">Support team · Online</p>
+                </div>
+                <Circle size={8} className="ml-auto text-[var(--success)] fill-[var(--success)]" />
+              </button>
+            ))}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create ticket dialog ──────────────────────────────── */}
+      <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Create ticket</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Ticket title</label>
+              <input
+                autoFocus
+                className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                placeholder="e.g. Delivery issue for order #12345"
+                value={ticketTitle}
+                onChange={(e) => setTicketTitle(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Priority</label>
+              <select className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none">
+                <option>Normal</option>
+                <option>High</option>
+                <option>Urgent</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Assign to</label>
+              <select className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none">
+                {AGENTS.map((a) => <option key={a}>{a}</option>)}
+              </select>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowTicketDialog(false)}>Cancel</Button>
+            <Button disabled={!ticketTitle.trim()} onClick={createTicket}>Create ticket</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Label dialog ─────────────────────────────────────── */}
+      <Dialog open={showLabelDialog} onOpenChange={setShowLabelDialog}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Manage labels</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <div className="flex flex-wrap gap-2">
+              {LABELS_OPTIONS.map((l) => {
+                const active = selected?.labels?.includes(l) ?? false
+                return (
+                  <button
+                    key={l}
+                    onClick={() => {
+                      setConvos((prev) => prev.map((c) => {
+                        if (c.id !== selectedId) return c
+                        const labels = c.labels ?? []
+                        return {
+                          ...c,
+                          labels: active ? labels.filter((x) => x !== l) : [...labels, l],
+                        }
+                      }))
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full text-sm border transition-colors',
+                      active
+                        ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                        : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    )}
+                  >
+                    {l}
+                  </button>
+                )
+              })}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={() => setShowLabelDialog(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
