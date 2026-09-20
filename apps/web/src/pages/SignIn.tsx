@@ -1,9 +1,30 @@
 import React, { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Bot, Eye, EyeOff } from 'lucide-react'
+import { Bot, Eye, EyeOff, FlaskConical } from 'lucide-react'
 import { Button, Input, Card } from '@ybot/ui'
 import { useAppStore } from '../store/app'
 import { apiFetch } from '../lib/api'
+
+const isDemoMode = () => import.meta.env.VITE_DEMO_MODE === 'true'
+
+const DEMO_USER = {
+  id: 'demo-user',
+  email: 'charles@acme.com',
+  displayName: 'Charles',
+  tenantId: 'demo-tenant',
+  role: 'ADMIN',
+}
+
+const DEMO_BOT = {
+  id: 'demo-bot',
+  name: 'Support Bot',
+  description: 'Handles customer support enquiries',
+  status: 'active',
+  environments: [
+    { id: 'demo-env-sandbox', kind: 'sandbox', name: 'Sandbox' },
+    { id: 'demo-env-prod', kind: 'production', name: 'Production' },
+  ],
+}
 
 type Mode = 'login' | 'register'
 
@@ -15,9 +36,11 @@ export function SignInPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const demo = isDemoMode()
+
   const [form, setForm] = useState({
-    email: '',
-    password: '',
+    email: demo ? 'charles@acme.com' : '',
+    password: demo ? 'password123' : '',
     displayName: '',
     tenantName: '',
     tenantSlug: '',
@@ -35,8 +58,21 @@ export function SignInPage() {
     setError(null)
   }
 
+  function enterDemo() {
+    setAuth(DEMO_USER, 'demo-token')
+    setBots([DEMO_BOT])
+    navigate({ to: '/overview' })
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // In demo mode bypass the backend entirely
+    if (demo) {
+      enterDemo()
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -69,6 +105,17 @@ export function SignInPage() {
   return (
     <div className="flex h-screen items-center justify-center bg-[var(--bg-base)] p-4">
       <div className="w-full max-w-[400px]">
+        {/* Demo mode banner */}
+        {demo && (
+          <div className="mb-4 flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--accent)] bg-[var(--accent-muted,color-mix(in_srgb,var(--accent)_12%,transparent))] px-3 py-2 text-sm text-[var(--accent)]">
+            <FlaskConical size={14} className="shrink-0" />
+            <span>
+              <strong>Demo mode</strong> — credentials are pre-filled.
+              All data is sample data; nothing is saved.
+            </span>
+          </div>
+        )}
+
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--accent)]">
@@ -84,7 +131,7 @@ export function SignInPage() {
 
         <Card>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {mode === 'register' && (
+            {mode === 'register' && !demo && (
               <>
                 <Input
                   label="Your name"
@@ -141,35 +188,43 @@ export function SignInPage() {
             )}
 
             <Button type="submit" disabled={loading} className="w-full mt-1">
-              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create workspace'}
+              {loading
+                ? 'Please wait…'
+                : demo
+                ? 'Enter demo'
+                : mode === 'login'
+                ? 'Sign in'
+                : 'Create workspace'}
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-[var(--text-muted)]">
-            {mode === 'login' ? (
-              <>
-                No account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="text-[var(--text-link)] hover:underline"
-                >
-                  Create workspace
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="text-[var(--text-link)] hover:underline"
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </div>
+          {!demo && (
+            <div className="mt-4 text-center text-sm text-[var(--text-muted)]">
+              {mode === 'login' ? (
+                <>
+                  No account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className="text-[var(--text-link)] hover:underline"
+                  >
+                    Create workspace
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => setMode('login')}
+                    className="text-[var(--text-link)] hover:underline"
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </Card>
 
         <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
