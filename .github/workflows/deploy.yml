@@ -45,6 +45,7 @@ jobs:
         env:
           VITE_DEMO_MODE: "true"
           VITE_API_URL: "/api/v1"
+          VITE_BASE_PATH: "/YAI/"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
