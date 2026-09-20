@@ -1,1 +1,1 @@
-export { DatabasePage } from './Channels'
+export { DatabasePage } from './DatabaseImpl'

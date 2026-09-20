@@ -1,1 +1,1 @@
-export { IntegrationsPage } from './Channels'
+export { IntegrationsPage } from './IntegrationsImpl'
