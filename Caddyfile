@@ -44,7 +44,18 @@ ybot.yourdomain.com {
     }
 }
 
-# ── Local / NAS variant (no TLS) ──────────────────────────────────────────────
+# ── Local / NAS variant (no TLS) ─────────────────────────────────────────────
+# Uncomment this block and comment out the one above for LAN / AVIORI usage.
+# Set FRONTEND_URL=http://aviori:8080 in .env.production; Caddy listens on :80
+# inside the container which Docker maps to HTTP_PORT (e.g. 8080) on the host.
+# http://aviori:8080 {
+#     handle /api/* { reverse_proxy ybot-api:3001 }
+#     handle /ws    { reverse_proxy ybot-api:3001 }
+#     handle        { reverse_proxy ybot-web:80 }
+#     log { output stdout; format console; level INFO }
+# }
+#
+# ── Localhost-only (dev without TLS) ─────────────────────────────────────────
 # http://localhost {
 #     handle /api/* { reverse_proxy ybot-api:3001 }
 #     handle /ws    { reverse_proxy ybot-api:3001 }
