@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/YAI/',
+  // GitHub Pages serves from /YAI/; Docker/self-hosted serves from /.
+  // Override with VITE_BASE_PATH env var at build time.
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [
     react(),
     tailwindcss(),

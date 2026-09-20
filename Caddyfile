@@ -1,42 +1,38 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Caddyfile — Reverse proxy for YBot stack
-# Replace "ybot.yourdomain.com" with your actual domain
-# For local/NAS use without TLS, replace with: http://localhost
+#
+# Default: plain HTTP on :80 (Docker maps this to HTTP_PORT on the host,
+# e.g. 7080 or 8080 on Synology NAS).  No TLS — suitable for LAN/NAS use.
+#
+# For a public domain with automatic HTTPS, replace ":80" with your domain
+# (e.g. "ybot.example.com") and remove the "http://" prefix if using Caddy's
+# automatic TLS.  Make sure ports 80 and 443 are forwarded to the NAS.
 # ─────────────────────────────────────────────────────────────────────────────
 
-ybot.yourdomain.com {
-    # Automatic HTTPS via Let's Encrypt (comment out for local/NAS use)
-    tls {
-        protocols tls1.2 tls1.3
-    }
-
-    # API proxy — all /api/* and /ws requests
+:80 {
+    # API proxy — all /api/* and /ws requests go to the backend
     handle /api/* {
         reverse_proxy ybot-api:3001
     }
 
     handle /ws {
         reverse_proxy ybot-api:3001 {
-            transport http {
-                dial_timeout 5s
-            }
             header_up Upgrade {http.request.header.Upgrade}
             header_up Connection {http.request.header.Connection}
         }
     }
 
-    # MinIO console (optional admin access)
+    # MinIO console (optional)
     handle /minio/* {
         uri strip_prefix /minio
         reverse_proxy ybot-minio:9001
     }
 
-    # SPA fallback — all other requests served by the web container
+    # SPA fallback — everything else served by the web container
     handle {
         reverse_proxy ybot-web:80
     }
 
-    # Logging
     log {
         output stdout
         format console
@@ -44,20 +40,10 @@ ybot.yourdomain.com {
     }
 }
 
-# ── Local / NAS variant (no TLS) ─────────────────────────────────────────────
-# Uncomment this block and comment out the one above for LAN / AVIORI usage.
-# Set FRONTEND_URL=http://aviori:8080 in .env.production; Caddy listens on :80
-# inside the container which Docker maps to HTTP_PORT (e.g. 8080) on the host.
-# http://aviori:8080 {
+# ── Public domain with automatic HTTPS (uncomment and edit) ──────────────────
+# ybot.example.com {
 #     handle /api/* { reverse_proxy ybot-api:3001 }
 #     handle /ws    { reverse_proxy ybot-api:3001 }
 #     handle        { reverse_proxy ybot-web:80 }
 #     log { output stdout; format console; level INFO }
-# }
-#
-# ── Localhost-only (dev without TLS) ─────────────────────────────────────────
-# http://localhost {
-#     handle /api/* { reverse_proxy ybot-api:3001 }
-#     handle /ws    { reverse_proxy ybot-api:3001 }
-#     handle        { reverse_proxy ybot-web:80 }
 # }
