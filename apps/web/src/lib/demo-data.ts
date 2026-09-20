@@ -141,12 +141,21 @@ export const DEMO_CONTACTS: Contact[] = [
 ]
 
 // ── Campaigns ─────────────────────────────────────────────────────────────────
-export const DEMO_CAMPAIGNS: Campaign[] = [
-  { id: 'camp1', name: 'September Newsletter', status: 'completed', direction: 'outbound', sentAt: new Date(Date.now() - 3 * 86400_000).toISOString() },
-  { id: 'camp2', name: 'Abandoned Cart Recovery', status: 'running', direction: 'outbound' },
-  { id: 'camp3', name: 'Q4 Product Launch', status: 'scheduled', direction: 'outbound', scheduledAt: new Date(Date.now() + 10 * 86400_000).toISOString() },
-  { id: 'camp4', name: 'Win-back: 90-day inactive', status: 'draft', direction: 'outbound' },
-]
+// Extra fields (channel, audience, etc.) satisfy the Campaigns page's local interface.
+export const DEMO_CAMPAIGNS = [
+  { id: 'camp1', name: 'September Newsletter', status: 'completed', direction: 'outbound',
+    channel: 'email', audience: 8400, sent: 8400, opened: 4620, clicked: 980,
+    template: 'Monthly Newsletter', createdAt: '5d ago',
+    sentAt: new Date(Date.now() - 3 * 86400_000).toISOString() },
+  { id: 'camp2', name: 'Abandoned Cart Recovery', status: 'running', direction: 'outbound',
+    channel: 'email', audience: 3200, sent: 1842, opened: 1220, clicked: 345,
+    template: 'Cart Recovery', createdAt: '1d ago' },
+  { id: 'camp3', name: 'Q4 Product Launch', status: 'scheduled', direction: 'outbound',
+    channel: 'whatsapp', audience: 12450, template: 'Product Launch', createdAt: '2d ago',
+    scheduledAt: new Date(Date.now() + 10 * 86400_000).toISOString() },
+  { id: 'camp4', name: 'Win-back: 90-day inactive', status: 'draft', direction: 'outbound',
+    channel: 'sms', audience: 0, createdAt: '3h ago' },
+] as unknown as Campaign[]
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 export const DEMO_TEMPLATES: Template[] = [
@@ -158,11 +167,21 @@ export const DEMO_TEMPLATES: Template[] = [
 ]
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
-export const DEMO_WEBHOOKS: Webhook[] = [
-  { id: 'wh1', url: 'https://hooks.zapier.com/hooks/catch/12345/abc', events: ['conversation.created', 'message.received', 'conversation.resolved'], isActive: true, createdAt: ago(5000 * 60) },
-  { id: 'wh2', url: 'https://api.hubspot.com/webhooks/v3/receive', events: ['contact.created', 'conversation.created'], isActive: true, createdAt: ago(3000 * 60) },
-  { id: 'wh3', url: 'https://n8n.acme.io/webhook/ybot-tickets', events: ['ticket.created', 'ticket.updated'], isActive: false, createdAt: ago(1000 * 60) },
-]
+// Extra fields (status, successRate, lastTriggered) satisfy the Webhooks page's local interface.
+export const DEMO_WEBHOOKS = [
+  { id: 'wh1', url: 'https://hooks.zapier.com/hooks/catch/12345/abc',
+    events: ['conversation.created', 'message.received', 'conversation.resolved'],
+    isActive: true, status: 'active', successRate: 98.2, lastTriggered: '2m ago',
+    createdAt: '3 months ago' },
+  { id: 'wh2', url: 'https://api.hubspot.com/webhooks/v3/receive',
+    events: ['contact.created', 'conversation.created'],
+    isActive: true, status: 'active', successRate: 100, lastTriggered: '45m ago',
+    createdAt: '2 months ago' },
+  { id: 'wh3', url: 'https://n8n.acme.io/webhook/ybot-tickets',
+    events: ['ticket.created', 'ticket.updated'],
+    isActive: false, status: 'error', successRate: 54, lastTriggered: '3h ago',
+    createdAt: '1 month ago' },
+] as unknown as Webhook[]
 
 // ── Team ──────────────────────────────────────────────────────────────────────
 export const DEMO_TEAM: TeamMember[] = [
