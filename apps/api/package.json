@@ -16,6 +16,8 @@
     "@fastify/cookie": "^11.0.1",
     "@fastify/jwt": "^9.0.0",
     "@fastify/rate-limit": "^10.2.0",
+    "@fastify/websocket": "^11.0.1",
+    "bullmq": "^5.10.4",
     "@ybot/db": "workspace:*",
     "@ybot/shared": "workspace:*",
     "bcryptjs": "^2.4.3",

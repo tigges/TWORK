@@ -6,6 +6,11 @@ import { authRoutes } from './routes/auth.js'
 import { meRoutes } from './routes/me.js'
 import { botsRoutes } from './routes/bots.js'
 import { tenantsRoutes } from './routes/tenants.js'
+import { flowsRoutes } from './routes/flows.js'
+import { knowledgeRoutes } from './routes/knowledge.js'
+import { conversationsRoutes, ticketsRoutes, contactsRoutes } from './routes/inbox.js'
+import { campaignsRoutes, templatesRoutes } from './routes/engage.js'
+import { channelsRoutes, webhooksRoutes, teamRoutes, analyticsRoutes, auditRoutes } from './routes/config.js'
 import { authMiddleware } from './middleware/auth.js'
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
@@ -43,7 +48,19 @@ app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
 await app.register(authRoutes, { prefix: '/api/v1/auth' })
 await app.register(meRoutes, { prefix: '/api/v1/me' })
 await app.register(botsRoutes, { prefix: '/api/v1/bots' })
+await app.register(flowsRoutes, { prefix: '/api/v1/bots' })
+await app.register(knowledgeRoutes, { prefix: '/api/v1/bots' })
+await app.register(campaignsRoutes, { prefix: '/api/v1/bots' })
+await app.register(templatesRoutes, { prefix: '/api/v1/bots' })
+await app.register(channelsRoutes, { prefix: '/api/v1/bots' })
 await app.register(tenantsRoutes, { prefix: '/api/v1/tenants' })
+await app.register(conversationsRoutes, { prefix: '/api/v1/conversations' })
+await app.register(ticketsRoutes, { prefix: '/api/v1/tickets' })
+await app.register(contactsRoutes, { prefix: '/api/v1/contacts' })
+await app.register(webhooksRoutes, { prefix: '/api/v1/webhooks' })
+await app.register(teamRoutes, { prefix: '/api/v1/team' })
+await app.register(analyticsRoutes, { prefix: '/api/v1/analytics' })
+await app.register(auditRoutes, { prefix: '/api/v1/audit' })
 
 try {
   await app.listen({ port: PORT, host: HOST })

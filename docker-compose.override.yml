@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.override.yml  —  LOCAL DEVELOPMENT overrides
+# Exposes ports directly + mounts source for hot-reload
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  postgres:
+    ports: ["5432:5432"]
+
+  valkey:
+    ports: ["6379:6379"]
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  # In development the API runs on host via `pnpm --filter @ybot/api dev`
+  # Uncomment below to run API in Docker instead:
+  # api:
+  #   build:
+  #     target: dev
+  #   volumes:
+  #     - ./apps/api/src:/app/apps/api/src
+  #   environment:
+  #     NODE_ENV: development
+  #   command: pnpm --filter @ybot/api dev
