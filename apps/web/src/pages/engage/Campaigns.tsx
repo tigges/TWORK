@@ -12,6 +12,7 @@ import {
 } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useCampaigns } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Campaigns', path: '/engage/campaigns' },
@@ -60,11 +61,13 @@ function pct(a?: number, b?: number): string {
 }
 
 export function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS)
+  const { data: rawCampaigns = [], isLoading } = useCampaigns()
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
 
+  // Merge API data with local mock defaults for display fields
+  const campaigns = (rawCampaigns as unknown as Campaign[])
   const filtered = campaigns.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()))
 
   return (

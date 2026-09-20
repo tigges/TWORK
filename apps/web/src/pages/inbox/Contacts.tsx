@@ -14,6 +14,7 @@ import {
 } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useContacts, useCreateContact } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Chats', path: '/inbox/chats' },
@@ -34,6 +35,17 @@ interface Contact {
   status: 'active' | 'inactive'
   tags?: string[]
   company?: string
+}
+
+function formatRelativeContact(iso?: string) {
+  if (!iso) return 'unknown'
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60_000)
+  if (m < 2) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
 }
 
 const MOCK_CONTACTS: Contact[] = [
@@ -129,17 +141,26 @@ function ContactDetail({ contact, onClose }: ContactDetailProps) {
 
 export function ContactsPage() {
   const [search, setSearch] = useState('')
+  const { data: rawContacts = [], isLoading } = useContacts(search || undefined)
+  const createContact = useCreateContact()
   const [selected, setSelected] = useState<Contact | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
 
-  const filtered = MOCK_CONTACTS.filter((c) =>
-    !search ||
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase()) ||
-    c.company?.toLowerCase().includes(search.toLowerCase())
-  )
+  // Map API contact shape to local Contact shape
+  const filtered: Contact[] = rawContacts.map((c) => ({
+    id: c.id,
+    name: c.displayName ?? c.email ?? 'Unknown',
+    email: c.email,
+    phone: c.phone,
+    company: c.metadata?.company as string | undefined,
+    tags: [c.metadata?.vip ? 'vip' : null, c.metadata?.plan as string | null].filter(Boolean) as string[],
+    status: 'active' as Contact['status'],
+    channel: 'web' as Contact['channel'],
+    lastSeen: formatRelativeContact(c.createdAt),
+    conversations: 0,
+  }))
 
   return (
     <div className="flex flex-col h-full">
@@ -171,10 +192,10 @@ export function ContactsPage() {
       {/* Stats bar */}
       <div className="flex items-center gap-6 px-6 py-2.5 bg-[var(--bg-overlay)] border-b border-[var(--border)] shrink-0">
         {[
-          { label: 'Total', value: MOCK_CONTACTS.length },
-          { label: 'Active today', value: MOCK_CONTACTS.filter((c) => c.status === 'active').length },
-          { label: 'With email', value: MOCK_CONTACTS.filter((c) => c.email).length },
-          { label: 'VIP', value: MOCK_CONTACTS.filter((c) => c.tags?.includes('vip')).length },
+          { label: 'Total', value: filtered.length },
+          { label: 'Active today', value: filtered.filter((c) => c.status === 'active').length },
+          { label: 'With email', value: filtered.filter((c) => c.email).length },
+          { label: 'VIP', value: filtered.filter((c) => c.tags?.includes('vip')).length },
         ].map((s) => (
           <div key={s.label} className="flex items-center gap-2">
             <span className="text-sm font-semibold text-[var(--text-primary)]">{s.value}</span>

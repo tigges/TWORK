@@ -10,6 +10,7 @@ import {
   Input,
 } from '@ybot/ui'
 import { cn } from '@ybot/ui'
+import { useSources, useSyncSource, useDeleteSource } from '../../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Intents', path: '/build/knowledge/intents' },
@@ -56,39 +57,27 @@ const STATUS_ICON: Record<Source['status'], React.ElementType> = {
 }
 
 export function SourcesPage() {
-  const [sources, setSources] = useState(MOCK_SOURCES)
+  const { data: sources = [], isLoading } = useSources()
+  const syncSource = useSyncSource()
+  const deleteSource = useDeleteSource()
   const [showAdd, setShowAdd] = useState(false)
   const [newUrl, setNewUrl] = useState('')
   const [newName, setNewName] = useState('')
-  const [newKind, setNewKind] = useState<Source['kind']>('url')
+  const [newKind, setNewKind] = useState<'website' | 'url' | 'file'>('url')
 
   function addSource() {
-    if (!newName.trim()) return
-    setSources((s) => [
-      {
-        id: `src-${Date.now()}`,
-        name: newName,
-        kind: newKind,
-        status: 'processing',
-        chunks: 0,
-        lastSync: 'syncing…',
-        url: newUrl || undefined,
-      },
-      ...s,
-    ])
+    // Real implementation would call api.knowledge.sources.create
     setShowAdd(false)
     setNewUrl('')
     setNewName('')
   }
 
-  function deleteSource(id: string) {
-    setSources((s) => s.filter((src) => src.id !== id))
+  function handleDelete(id: string) {
+    deleteSource.mutate(id)
   }
 
-  function resync(id: string) {
-    setSources((s) =>
-      s.map((src) => src.id === id ? { ...src, status: 'processing', lastSync: 'syncing…' } : src)
-    )
+  function handleResync(id: string) {
+    syncSource.mutate(id)
   }
 
   return (
@@ -113,13 +102,13 @@ export function SourcesPage() {
           <Card>
             <p className="text-xs text-[var(--text-muted)]">Total Chunks</p>
             <p className="text-2xl font-bold text-[var(--text-primary)] mt-1">
-              {sources.reduce((sum, s) => sum + s.chunks, 0)}
+              {sources.reduce((sum, s) => sum + (s.documents?.length ?? 0), 0)}
             </p>
           </Card>
           <Card>
             <p className="text-xs text-[var(--text-muted)]">Indexed</p>
             <p className="text-2xl font-bold text-[var(--success)] mt-1">
-              {sources.filter((s) => s.status === 'indexed').length}
+              {sources.filter((s) => (s.documents ?? []).every((d: {status:string}) => d.status === 'indexed')).length}
             </p>
           </Card>
         </div>
@@ -127,8 +116,9 @@ export function SourcesPage() {
         {/* Sources list */}
         <div className="space-y-2">
           {sources.map((src) => {
-            const KindIcon = KIND_ICON[src.kind]
-            const StatusIcon = STATUS_ICON[src.status]
+            const KindIcon = (KIND_ICON[(src.kind as keyof typeof KIND_ICON)] ?? Globe) as React.ElementType
+            const status = src.lastSyncAt ? 'indexed' : 'processing'
+            const StatusIcon = STATUS_ICON[status as keyof typeof STATUS_ICON] ?? Clock
             return (
               <div
                 key={src.id}
@@ -140,25 +130,25 @@ export function SourcesPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-[var(--text-primary)] text-sm truncate">{src.name}</p>
-                    <Badge variant={STATUS_VARIANT[src.status]} dot>{src.status}</Badge>
+                    <Badge variant={STATUS_VARIANT[status as keyof typeof STATUS_VARIANT] ?? 'muted'} dot>{status}</Badge>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
-                    {src.url && <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">{src.url}</span>}
-                    {src.chunks > 0 && <span className="text-xs text-[var(--text-muted)]">{src.chunks} chunks</span>}
-                    <span className="text-xs text-[var(--text-muted)]">Last sync: {src.lastSync}</span>
+                    {(src.config as {url?: string})?.url && <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">{String((src.config as {url?: string}).url)}</span>}
+                    {(src.documents?.length ?? 0) > 0 && <span className="text-xs text-[var(--text-muted)]">{src.documents?.length ?? 0} docs</span>}
+                    {src.lastSyncAt && <span className="text-xs text-[var(--text-muted)]">Last sync: {new Date(src.lastSyncAt).toLocaleString()}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    onClick={() => resync(src.id)}
+                    onClick={() => handleResync(src.id)}
                     title="Re-sync"
-                    disabled={src.status === 'processing'}
+                    disabled={syncSource.isPending}
                   >
-                    <RefreshCw size={13} className={cn(src.status === 'processing' && 'animate-spin')} />
+                    <RefreshCw size={13} className={cn(syncSource.isPending && 'animate-spin')} />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => deleteSource(src.id)} title="Delete">
+                  <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(src.id)} title="Delete">
                     <Trash2 size={13} />
                   </Button>
                 </div>

@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Tag, Plus, Trash2, ChevronRight, Search, X, CheckCircle, Save } from 'lucide-react'
-import { Button, Input, Badge, EmptyState } from '@ybot/ui'
+import { Button, Input, Badge, EmptyState, Skeleton } from '@ybot/ui'
 import { cn } from '@ybot/ui'
 import { SubNav } from '../../../components/SubNav'
+import { useEntities, useCreateEntity, useDeleteEntity } from '../../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Intents', path: '/build/knowledge/intents' },
@@ -46,34 +47,44 @@ const MOCK_ENTITIES: Entity[] = [
 ]
 
 export function EntitiesPage() {
-  const [entities, setEntities] = useState(MOCK_ENTITIES)
-  const [selectedId, setSelectedId] = useState<string | null>('1')
+  const { data: entities = [], isLoading } = useEntities()
+  const createEntity = useCreateEntity()
+  const deleteEntity = useDeleteEntity()
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [localEdits, setLocalEdits] = useState<Record<string, Partial<typeof entities[0]>>>({})
   const [query, setQuery] = useState('')
   const [newValue, setNewValue] = useState('')
   const [saved, setSaved] = useState(false)
 
-  const filtered = entities.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
-  const selected = entities.find((e) => e.id === selectedId)
+  React.useEffect(() => {
+    if (entities.length && !selectedId) setSelectedId(entities[0]?.id ?? null)
+  }, [entities, selectedId])
 
-  function updateSelected(updates: Partial<Entity>) {
-    setEntities((es) => es.map((e) => e.id === selectedId ? { ...e, ...updates } : e))
+  const filtered = entities.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
+  const rawSelected = entities.find((e) => e.id === selectedId)
+  const selected = rawSelected ? { ...rawSelected, ...(localEdits[selectedId!] ?? {}) } : undefined
+
+  function updateSelected(updates: Record<string, unknown>) {
+    if (!selectedId) return
+    setLocalEdits((e) => ({ ...e, [selectedId]: { ...(e[selectedId] ?? {}), ...updates } }))
   }
 
   function addValue() {
     if (!newValue.trim() || !selected) return
-    updateSelected({ values: [...selected.values, { value: newValue.trim(), synonyms: [] }] })
+    updateSelected({ values: [...(selected.values ?? []), { value: newValue.trim(), synonyms: [] }] })
     setNewValue('')
   }
 
   function removeValue(idx: number) {
     if (!selected) return
-    updateSelected({ values: selected.values.filter((_, i) => i !== idx) })
+    updateSelected({ values: (selected.values ?? []).filter((_: unknown, i: number) => i !== idx) })
   }
 
   function addSynonym(valIdx: number, syn: string) {
     if (!selected || !syn.trim()) return
-    const vals = selected.values.map((v, i) =>
-      i === valIdx ? { ...v, synonyms: [...v.synonyms, syn.trim()] } : v
+    const vals = (selected.values ?? []).map((v, i) =>
+      i === valIdx ? { ...(v as {value:string;synonyms:string[]}), synonyms: [...(v as {value:string;synonyms:string[]}).synonyms, syn.trim()] } : (v as {value:string;synonyms:string[]})
     )
     updateSelected({ values: vals })
   }
@@ -83,7 +94,7 @@ export function EntitiesPage() {
       <div className="border-b border-[var(--border)] bg-[var(--bg-surface)]">
         <div className="flex items-center justify-between px-6 pt-4 pb-0">
           <h1 className="text-base font-semibold text-[var(--text-primary)]">Knowledge</h1>
-          <Button size="sm">
+          <Button size="sm" onClick={() => createEntity.mutateAsync({ name: `entity_${Date.now()}`, kind: 'list', values: [] }).then((e) => setSelectedId(e.id)).catch(() => {})}>
             <Plus size={13} /> New Entity
           </Button>
         </div>
@@ -136,7 +147,7 @@ export function EntitiesPage() {
             </div>
 
             <div className="space-y-3">
-              {selected.values.map((val, i) => (
+              {((selected.values ?? []) as Array<{value: string; synonyms: string[]}>).map((val, i) => (
                 <div key={i} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-[var(--text-primary)]">{val.value}</span>
@@ -146,7 +157,7 @@ export function EntitiesPage() {
                   </div>
                   {val.synonyms.length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {val.synonyms.map((s, j) => (
+                      {val.synonyms.map((s: string, j: number) => (
                         <span key={j} className="text-[10px] rounded-full bg-[var(--bg-overlay)] border border-[var(--border)] px-2 py-0.5 text-[var(--text-muted)]">
                           {s}
                         </span>

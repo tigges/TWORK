@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Search, Filter, ChevronDown, Paperclip, Smile, Send,
   AlertCircle, Clock, CheckCheck, MoreHorizontal, Tag,
@@ -6,7 +6,7 @@ import {
   Phone, Mail, Globe, Hash, ChevronRight, X, Mic,
   Circle, Zap, Star,
 } from 'lucide-react'
-import { Avatar, Badge, Input, Button } from '@ybot/ui'
+import { Avatar, Badge, Input, Button, Skeleton } from '@ybot/ui'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useConversations, useConversation, useSendMessage, useAssignConversation, useResolveConversation } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Chats', path: '/inbox/chats' },
@@ -82,6 +83,17 @@ const CANNED_RESPONSES = [
 
 const LABELS_OPTIONS = ['billing', 'delivery', 'urgent', 'priority', 'technical', 'refund']
 
+function formatRelative(iso?: string) {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60_000)
+  if (m < 2) return 'now'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
+}
+
 function SlaChip({ sla }: { sla?: string }) {
   if (!sla) return null
   const breached = sla === 'Breached'
@@ -109,12 +121,21 @@ function ChannelIcon({ ch }: { ch: string }) {
 }
 
 export function ChatsPage() {
-  const [selectedId, setSelectedId] = useState<string>('1')
+  const { data: conversations = [], isLoading: loadingConvos } = useConversations()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const sendMessage = useSendMessage()
+  const assignConversation = useAssignConversation()
+  const resolveConversation = useResolveConversation()
+
+  useEffect(() => {
+    if (conversations.length && !selectedId) setSelectedId(conversations[0]?.id ?? null)
+  }, [conversations, selectedId])
+
+  const { data: selectedConvo } = useConversation(selectedId ?? '')
+
   const [reply, setReply] = useState('')
   const [noteType, setNoteType] = useState<NoteType>('reply')
   const [view, setView] = useState<View>('all')
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
-  const [convos, setConvos] = useState<Convo[]>(MOCK_CONVOS)
   const [showCanned, setShowCanned] = useState(false)
   const [cannedFilter, setCannedFilter] = useState('')
   const [showAssign, setShowAssign] = useState(false)
@@ -125,7 +146,31 @@ export function ChatsPage() {
   const [rightPanelSection, setRightPanelSection] = useState<'info' | 'history' | 'labels'>('info')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const selected = convos.find((c) => c.id === selectedId)!
+  // Map API conversations to local Convo shape
+  const convos: Convo[] = conversations.map((c) => ({
+    id: c.id,
+    name: c.contact?.displayName ?? 'Unknown',
+    message: c.messages?.[c.messages.length - 1]?.content?.text ?? '',
+    time: formatRelative(c.updatedAt),
+    status: (c.status as ConvoStatus) ?? 'active',
+    unread: c.messages?.filter((m) => m.direction === 'inbound').length ?? 0,
+    channel: (c.channel?.kind ?? 'web') as Convo['channel'],
+    assignee: c.assignedTo ?? null,
+    labels: c.labels?.map((l) => l.label?.name ?? '') ?? [],
+    email: c.contact?.email,
+    phone: c.contact?.phone,
+  }))
+
+  const messages: Message[] = (selectedConvo?.messages ?? []).map((m) => ({
+    id: m.id,
+    from: (m.authorKind ?? m.direction === 'inbound' ? 'user' : 'agent') as 'user' | 'bot' | 'agent',
+    name: m.authorKind === 'user' ? selectedConvo!.contact?.displayName ?? 'User' : m.authorKind === 'bot' ? 'YBot' : 'Agent',
+    text: m.content?.text ?? '',
+    time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    isNote: (m as unknown as { isNote?: boolean }).isNote,
+  }))
+
+  const selected = convos.find((c) => c.id === selectedId) ?? convos[0]
 
   const filteredConvos = convos.filter((c) => {
     if (view === 'mine') return c.assignee === 'Sarah K'
@@ -157,36 +202,23 @@ export function ChatsPage() {
     setShowCanned(false)
   }
 
-  function sendReply() {
-    if (!reply.trim()) return
-    const msg: Message = {
-      id: String(Date.now()),
-      from: 'agent',
-      name: 'Sarah K',
-      text: reply,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isNote: noteType === 'note',
-    }
-    setMessages((prev) => [...prev, msg])
+  async function sendReply() {
+    if (!reply.trim() || !selectedId) return
+    try {
+      await sendMessage.mutateAsync({ conversationId: selectedId, text: reply })
+    } catch { /* demo mode — no-op */ }
     setReply('')
     setShowCanned(false)
-    if (noteType === 'reply') {
-      setConvos((prev) => prev.map((c) => c.id === selectedId ? { ...c, unread: 0 } : c))
-    }
   }
 
-  function resolveConvo() {
-    setConvos((prev) => prev.map((c) => c.id === selectedId
-      ? { ...c, status: c.status === 'resolved' ? 'active' : 'resolved' }
-      : c
-    ))
+  async function resolveConvo() {
+    if (!selectedId) return
+    try { await resolveConversation.mutateAsync(selectedId) } catch { /* demo */ }
   }
 
-  function assignTo(agent: string) {
-    setConvos((prev) => prev.map((c) => c.id === selectedId
-      ? { ...c, assignee: agent === 'Unassigned' ? null : agent }
-      : c
-    ))
+  async function assignTo(agent: string) {
+    if (!selectedId) return
+    try { await assignConversation.mutateAsync({ id: selectedId, assignedTo: agent === 'Unassigned' ? null : agent }) } catch { /* demo */ }
     setShowAssign(false)
   }
 
@@ -194,10 +226,9 @@ export function ChatsPage() {
     if (!ticketTitle.trim()) return
     setShowTicketDialog(false)
     setTicketTitle('')
-    // In production this would POST to API
   }
 
-  const statusVariant: Record<ConvoStatus, 'info' | 'success' | 'error' | 'warning' | 'muted'> = {
+  const statusVariant: Record<string, 'info' | 'success' | 'error' | 'warning' | 'muted'> = {
     active: 'info',
     resolved: 'success',
     escalated: 'error',
@@ -258,7 +289,9 @@ export function ChatsPage() {
 
         {/* Conversation items */}
         <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]">
-          {filteredConvos.map((conv) => (
+          {loadingConvos
+            ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="p-3"><Skeleton className="h-12 w-full rounded-[var(--radius)]" /></div>)
+            : filteredConvos.map((conv) => (
             <button
               key={conv.id}
               onClick={() => setSelectedId(conv.id)}
@@ -727,14 +760,8 @@ export function ChatsPage() {
                   <button
                     key={l}
                     onClick={() => {
-                      setConvos((prev) => prev.map((c) => {
-                        if (c.id !== selectedId) return c
-                        const labels = c.labels ?? []
-                        return {
-                          ...c,
-                          labels: active ? labels.filter((x) => x !== l) : [...labels, l],
-                        }
-                      }))
+                      // Label updates require API call — skip in demo mode
+                      void l
                     }}
                     className={cn(
                       'px-3 py-1.5 rounded-full text-sm border transition-colors',

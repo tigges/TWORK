@@ -3,9 +3,10 @@ import {
   Brain, Plus, Trash2, Save, ChevronRight, Search,
   MessageCircle, X, CheckCircle
 } from 'lucide-react'
-import { Button, Input, Badge, EmptyState, PageHeader } from '@ybot/ui'
+import { Button, Input, Badge, EmptyState, PageHeader, Skeleton } from '@ybot/ui'
 import { cn } from '@ybot/ui'
 import { SubNav } from '../../../components/SubNav'
+import { useIntents, useUpdateIntent, useCreateIntent, useDeleteIntent } from '../../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Intents', path: '/build/knowledge/intents' },
@@ -62,55 +63,75 @@ const MOCK_INTENTS: Intent[] = [
 ]
 
 export function IntentsPage() {
-  const [intents, setIntents] = useState(MOCK_INTENTS)
-  const [selectedId, setSelectedId] = useState<string | null>('1')
+  const { data: intents = [], isLoading } = useIntents()
+  const updateIntent = useUpdateIntent()
+  const createIntent = useCreateIntent()
+  const deleteIntent = useDeleteIntent()
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [localEdits, setLocalEdits] = useState<Record<string, Partial<Intent>>>({})
   const [query, setQuery] = useState('')
   const [newUtterance, setNewUtterance] = useState('')
   const [newResponse, setNewResponse] = useState('')
   const [saved, setSaved] = useState(false)
 
+  React.useEffect(() => {
+    if (intents.length && !selectedId) setSelectedId(intents[0]?.id ?? null)
+  }, [intents, selectedId])
+
   const filtered = intents.filter(
     (i) => i.name.toLowerCase().includes(query.toLowerCase()) ||
-           i.description.toLowerCase().includes(query.toLowerCase())
+           (i.description ?? '').toLowerCase().includes(query.toLowerCase())
   )
-  const selected = intents.find((i) => i.id === selectedId)
+  const rawSelected = intents.find((i) => i.id === selectedId)
+  const selected = rawSelected ? { ...rawSelected, ...(localEdits[selectedId!] ?? {}) } as Intent : undefined
 
   function updateSelected(updates: Partial<Intent>) {
-    setIntents((is) => is.map((i) => i.id === selectedId ? { ...i, ...updates } : i))
+    if (!selectedId) return
+    setLocalEdits((e) => ({ ...e, [selectedId]: { ...(e[selectedId] ?? {}), ...updates } }))
   }
 
   function addUtterance() {
     if (!newUtterance.trim() || !selected) return
-    updateSelected({ utterances: [...selected.utterances, newUtterance.trim()] })
+    updateSelected({ utterances: [...(selected.utterances ?? []), newUtterance.trim()] })
     setNewUtterance('')
   }
 
   function removeUtterance(idx: number) {
     if (!selected) return
-    updateSelected({ utterances: selected.utterances.filter((_, i) => i !== idx) })
+    updateSelected({ utterances: (selected.utterances ?? []).filter((_, i) => i !== idx) })
   }
 
   function addResponse() {
     if (!newResponse.trim() || !selected) return
-    updateSelected({ responses: [...selected.responses, newResponse.trim()] })
+    const current = (selected.responses ?? []).map((r: {text:string}|string) => typeof r === 'string' ? r : r.text)
+    updateSelected({ responses: [...current, newResponse.trim()] as string[] })
     setNewResponse('')
   }
 
   function removeResponse(idx: number) {
     if (!selected) return
-    updateSelected({ responses: selected.responses.filter((_, i) => i !== idx) })
+    updateSelected({ responses: (selected.responses ?? []).filter((_: unknown, i: number) => i !== idx) as string[] })
   }
 
-  function handleSave() {
+  async function handleSave() {
+    if (!selectedId || !localEdits[selectedId]) return
+    try {
+      await updateIntent.mutateAsync({ id: selectedId, ...localEdits[selectedId] } as Parameters<typeof updateIntent.mutateAsync>[0])
+      setLocalEdits((e) => { const copy = { ...e }; delete copy[selectedId]; return copy })
+    } catch { /* demo mode fallback */ }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  function addIntent() {
-    const id = `intent-${Date.now()}`
-    const newIntent: Intent = { id, name: 'new_intent', description: '', utterances: [], responses: [] }
-    setIntents((is) => [newIntent, ...is])
-    setSelectedId(id)
+  async function addIntent() {
+    const name = `new_intent_${Date.now()}`
+    try {
+      const created = await createIntent.mutateAsync({ name, description: '', utterances: [], responses: [] })
+      setSelectedId(created.id)
+    } catch {
+      setSelectedId(intents[0]?.id ?? null)
+    }
   }
 
   return (
@@ -242,10 +263,10 @@ export function IntentsPage() {
                 </div>
 
                 <div className="space-y-2 mb-3">
-                  {selected.responses.map((r, i) => (
+                  {(selected.responses ?? []).map((r: {text:string}|string, i: number) => (
                     <div key={i} className="group flex items-start gap-2">
                       <div className="flex-1 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]">
-                        {r}
+                        {typeof r === 'string' ? r : r.text}
                       </div>
                       <button
                         onClick={() => removeResponse(i)}

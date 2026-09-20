@@ -38,6 +38,12 @@ importers:
       '@ybot/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ybot/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@ybot/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@ybot/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -50,6 +56,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.12.5
+      ioredis:
+        specifier: ^5.3.2
+        version: 5.11.1
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -57,6 +66,9 @@ importers:
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
+      '@types/ioredis':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@types/node':
         specifier: ^22.10.1
         version: 22.20.4
@@ -1624,6 +1636,10 @@ packages:
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+
+  '@types/ioredis@5.0.0':
+    resolution: {integrity: sha512-zJbJ3FVE17CNl5KXzdeSPtdltc4tMT3TzC6fxQS0sQngkbFZ6h+0uTafsRqu+eSLIugf6Yb0Ea0SUuRr42Nk9g==}
+    deprecated: This is a stub types definition. ioredis provides its own type definitions, so you do not need this installed.
 
   '@types/node@22.20.4':
     resolution: {integrity: sha512-zJRE40jpHtKqE/C4fgHrAKQLJuSpzEnP9ff9Y7YtoR3Wd2pwqzlekDeEuUQXjRd+QCYnVnNwuJYmhdk9XV8gvA==}
@@ -3899,6 +3915,12 @@ snapshots:
       '@types/d3-selection': 3.0.12
 
   '@types/estree@1.0.9': {}
+
+  '@types/ioredis@5.0.0':
+    dependencies:
+      ioredis: 5.11.1
+    transitivePeerDependencies:
+      - supports-color
 
   '@types/node@22.20.4':
     dependencies:

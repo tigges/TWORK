@@ -9,6 +9,7 @@ import { Avatar, Badge, Button, Input } from '@ybot/ui'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useAuditLog } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Team', path: '/admin/team' },
@@ -81,18 +82,44 @@ const MOCK_EVENTS: AuditEvent[] = [
 
 const CATEGORIES = Array.from(new Set(Object.values(ACTION_CFG).map((a) => a.category)))
 
+function formatAuditTime(iso?: string) {
+  if (!iso) return '?'
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60_000)
+  if (m < 2) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 export function AuditPage() {
+  const { data: apiEvents = [] } = useAuditLog()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [severityFilter, setSeverityFilter] = useState<AuditSeverity | 'all'>('all')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  const filtered = MOCK_EVENTS.filter((e) => {
+  // Map API audit events to display shape (fall back to static mock if API not available)
+  const events: AuditEvent[] = apiEvents.length > 0
+    ? apiEvents.map((e) => ({
+        id: e.id,
+        actor: { name: e.user?.displayName ?? 'System', email: e.user?.email ?? '' },
+        action: (e.action in ACTION_CFG ? e.action : 'user.login') as AuditEvent['action'],
+        resource: (e.resource ?? '—'),
+        details: JSON.stringify(e.metadata ?? {}),
+        ip: (e.metadata?.ip ?? 'unknown') as string,
+        timestamp: formatAuditTime(e.createdAt),
+        severity: ('info') as AuditSeverity,
+      }))
+    : MOCK_EVENTS
+
+  const filtered = events.filter((e) => {
     const matchSearch = !search ||
       e.actor.name.toLowerCase().includes(search.toLowerCase()) ||
-      ACTION_CFG[e.action].label.toLowerCase().includes(search.toLowerCase()) ||
+      ACTION_CFG[e.action]?.label?.toLowerCase().includes(search.toLowerCase()) ||
       e.resource.toLowerCase().includes(search.toLowerCase())
-    const matchCat = categoryFilter === 'all' || ACTION_CFG[e.action].category === categoryFilter
+    const matchCat = categoryFilter === 'all' || ACTION_CFG[e.action]?.category === categoryFilter
     const matchSev = severityFilter === 'all' || e.severity === severityFilter
     return matchSearch && matchCat && matchSev
   })

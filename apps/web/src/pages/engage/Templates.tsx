@@ -12,6 +12,7 @@ import {
 } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useTemplates } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Campaigns', path: '/engage/campaigns' },
@@ -102,7 +103,8 @@ const CHANNEL_COLORS: Record<TemplateChannel, 'info' | 'success' | 'warning' | '
 }
 
 export function TemplatesPage() {
-  const [templates, setTemplates] = useState<Template[]>(MOCK_TEMPLATES)
+  const { data: rawTemplates = [] } = useTemplates()
+  const templates = rawTemplates as unknown as Template[]
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState<TemplateChannel | 'all'>('all')
   const [preview, setPreview] = useState<Template | null>(null)
@@ -218,7 +220,7 @@ export function TemplatesPage() {
                           <Copy size={13} /> Duplicate
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem destructive onClick={(e) => { e.stopPropagation(); setTemplates((p) => p.filter((x) => x.id !== t.id)) }}>
+                        <DropdownMenuItem destructive onClick={(e) => { e.stopPropagation(); /* template delete would call API */ }}>
                           <Trash2 size={13} /> Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>

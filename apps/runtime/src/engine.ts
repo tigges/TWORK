@@ -3,6 +3,7 @@ import {
   executeTriggerStart, executeSendMessage, executeAskQuestion,
   executeSetVariable, executeCondition, executeHttpRequest,
   executeClassifyIntent, executeHandover, executeCreateTicket, executeEndFlow,
+  executeSearchKnowledge, executeLlmGenerate,
 } from './nodes/executors.js'
 
 type NodeExecutor = (ctx: NodeContext) => Promise<NodeResult>
@@ -18,6 +19,8 @@ const EXECUTORS: Record<string, NodeExecutor> = {
   handover:         executeHandover,
   create_ticket:    executeCreateTicket,
   end_flow:         executeEndFlow,
+  search_knowledge: executeSearchKnowledge,
+  llm_generate:     executeLlmGenerate,
 }
 
 export interface GraphNode {

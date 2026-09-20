@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { HelpCircle, Plus, Search, Trash2, ChevronRight, Save, CheckCircle } from 'lucide-react'
-import { Button, Input, Badge, EmptyState } from '@ybot/ui'
+import { Button, Input, Badge, EmptyState, Skeleton } from '@ybot/ui'
 import { cn } from '@ybot/ui'
 import { SubNav } from '../../../components/SubNav'
+import { useFaqs, useCreateFaq, useDeleteFaq } from '../../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Intents', path: '/build/knowledge/intents' },
@@ -28,25 +29,36 @@ const MOCK_FAQS: Faq[] = [
 ]
 
 export function FaqsPage() {
-  const [faqs, setFaqs] = useState(MOCK_FAQS)
-  const [selectedId, setSelectedId] = useState<string | null>('1')
+  const { data: faqs = [], isLoading } = useFaqs()
+  const createFaq = useCreateFaq()
+  const deleteFaq = useDeleteFaq()
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [localEdits, setLocalEdits] = useState<Record<string, {question?:string;answer?:string;tags?:string[]}>>({})
   const [query, setQuery] = useState('')
   const [saved, setSaved] = useState(false)
+
+  React.useEffect(() => {
+    if (faqs.length && !selectedId) setSelectedId(faqs[0]?.id ?? null)
+  }, [faqs, selectedId])
 
   const filtered = faqs.filter(
     (f) => f.question.toLowerCase().includes(query.toLowerCase()) ||
            f.answer.toLowerCase().includes(query.toLowerCase())
   )
-  const selected = faqs.find((f) => f.id === selectedId)
+  const rawSelected = faqs.find((f) => f.id === selectedId)
+  const selected = rawSelected ? { ...rawSelected, ...(localEdits[selectedId!] ?? {}) } : undefined
 
-  function updateSelected(updates: Partial<Faq>) {
-    setFaqs((fs) => fs.map((f) => f.id === selectedId ? { ...f, ...updates } : f))
+  function updateSelected(updates: {question?:string;answer?:string;tags?:string[]}) {
+    if (!selectedId) return
+    setLocalEdits((e) => ({ ...e, [selectedId]: { ...(e[selectedId] ?? {}), ...updates } }))
   }
 
-  function addFaq() {
-    const id = `faq-${Date.now()}`
-    setFaqs((fs) => [{ id, question: 'New Question', answer: '', tags: [] }, ...fs])
-    setSelectedId(id)
+  async function addFaq() {
+    try {
+      const created = await createFaq.mutateAsync({ question: 'New Question', answer: '', tags: [] })
+      setSelectedId(created.id)
+    } catch { setSelectedId(faqs[0]?.id ?? null) }
   }
 
   return (
@@ -96,7 +108,7 @@ export function FaqsPage() {
           <div className="flex-1 overflow-auto p-6 max-w-2xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">FAQ Editor</h2>
-              <Button size="sm" onClick={() => setSaved(true)}>
+              <Button size="sm" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000) }}>
                 {saved ? <><CheckCircle size={13} /> Saved</> : <><Save size={13} /> Save</>}
               </Button>
             </div>

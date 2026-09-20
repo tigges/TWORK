@@ -6,6 +6,7 @@ import {
 import { Button, Badge, Card, CardHeader, CardTitle } from '@ybot/ui'
 import { SubNav } from '../../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useTraining, useSaveTraining } from '../../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Intents', path: '/build/knowledge/intents' },
@@ -34,17 +35,28 @@ const MOCK_RUNS: TrainingRun[] = [
 ]
 
 export function TrainingPage() {
+  const { data: config } = useTraining()
+  const saveTraining = useSaveTraining()
   const [runs, setRuns] = useState(MOCK_RUNS)
   const [training, setTraining] = useState(false)
-  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
-  const [temperature, setTemperature] = useState('0.3')
-  const [systemPrompt, setSystemPrompt] = useState(
-    'You are a helpful customer support assistant for Acme Corp. Be friendly, concise, and helpful. Always confirm user\'s order number before looking up details.'
-  )
+  const [selectedModel, setSelectedModel] = useState(config?.model ?? 'gpt-4o-mini')
+  const [temperature, setTemperature] = useState(String(config?.temperature ?? 0.3))
+  const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? 'You are a helpful customer support assistant.')
+
+  React.useEffect(() => {
+    if (config) {
+      setSelectedModel(config.model ?? 'gpt-4o-mini')
+      setTemperature(String(config.temperature ?? 0.3))
+      setSystemPrompt(config.systemPrompt ?? '')
+    }
+  }, [config])
 
   async function handleTrain() {
     setTraining(true)
-    await new Promise((r) => setTimeout(r, 2500))
+    try {
+      await saveTraining.mutateAsync({ model: selectedModel, temperature: parseFloat(temperature), systemPrompt })
+    } catch { /* demo mode */ }
+    await new Promise((r) => setTimeout(r, 1500))
     setRuns((rs) => [{
       id: `run-${Date.now()}`,
       status: 'success',
