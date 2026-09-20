@@ -187,6 +187,7 @@ export const audit = {
 
 export const system = {
   status: () => apiFetch<{ data: SystemStatus }>('/system/status'),
+  config: () => apiFetch<{ data: SystemConfig }>('/system/config'),
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -223,4 +224,14 @@ export interface SystemStatus {
   rag: { sources: number; documents: number; chunks: number; sourceList: RagSourceEntry[] }
   system: { platform: string; uptime: number; nodeVersion: string; cpuCount: number; totalMemMb: number; freeMemMb: number; usedMemPct: number }
   ts: string
+}
+
+export interface ConfigEntry { set: boolean; label: string; value?: string | null; endpoint?: string | null }
+export interface SystemConfig {
+  auth: { JWT_SECRET: ConfigEntry }
+  database: { DATABASE_URL: ConfigEntry }
+  cache: { REDIS_URL: ConfigEntry }
+  storage: { S3_ENDPOINT: ConfigEntry; S3_BUCKET: ConfigEntry; S3_REGION: ConfigEntry }
+  llm: { OPENAI_API_KEY: ConfigEntry; ANTHROPIC_API_KEY: ConfigEntry; GROQ_API_KEY: ConfigEntry; OLLAMA_BASE_URL: ConfigEntry }
+  app: { NODE_ENV: ConfigEntry; FRONTEND_URL: ConfigEntry }
 }

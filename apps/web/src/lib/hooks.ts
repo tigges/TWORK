@@ -399,3 +399,11 @@ export function useSystemStatus(options?: { refetchInterval?: number }) {
     refetchInterval: options?.refetchInterval,
   })
 }
+
+export function useSystemConfig() {
+  return useQuery({
+    queryKey: ['system-config'],
+    queryFn: withDemoFallback(() => api.system.config().then((r) => r.data), demo.DEMO_SYSTEM_CONFIG),
+    staleTime: 60_000,
+  })
+}
