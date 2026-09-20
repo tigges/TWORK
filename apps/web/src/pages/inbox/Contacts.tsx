@@ -1,7 +1,19 @@
-import React from 'react'
-import { Users } from 'lucide-react'
-import { StubPage } from '../../components/StubPage'
+import React, { useState } from 'react'
+import {
+  Search, Plus, Filter, Mail, Phone, Globe, MessageSquare,
+  MoreHorizontal, ChevronDown, Upload, Download, Star,
+  Clock, MessageCircle, CheckCircle2,
+} from 'lucide-react'
+import { Avatar, Badge, Button, Input } from '@ybot/ui'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter,
+} from '@ybot/ui'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
+import { cn } from '@ybot/ui'
 
 const SUBNAV = [
   { label: 'Chats', path: '/inbox/chats' },
@@ -10,16 +22,280 @@ const SUBNAV = [
   { label: 'Settings', path: '/inbox/settings' },
 ]
 
+interface Contact {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+  location?: string
+  channel: string
+  conversations: number
+  lastSeen: string
+  status: 'active' | 'inactive'
+  tags?: string[]
+  company?: string
+}
+
+const MOCK_CONTACTS: Contact[] = [
+  { id: '1', name: 'Alice Johnson', email: 'alice@example.com', phone: '+44 7700 900123', location: 'London, UK', channel: 'web', conversations: 4, lastSeen: '2m ago', status: 'active', tags: ['vip', 'enterprise'], company: 'Acme Corp' },
+  { id: '2', name: 'Bob Smith', email: 'bob@example.com', phone: '+44 7700 900456', channel: 'whatsapp', conversations: 2, lastSeen: '8m ago', status: 'active', company: 'Globex Ltd' },
+  { id: '3', name: 'Carol White', email: 'carol@example.com', channel: 'web', conversations: 6, lastSeen: '1h ago', status: 'active', tags: ['vip'] },
+  { id: '4', name: 'David Lee', email: 'david@example.com', phone: '+44 7700 900789', location: 'Manchester, UK', channel: 'sms', conversations: 3, lastSeen: '3h ago', status: 'inactive', company: 'Initech' },
+  { id: '5', name: 'Eve Brown', email: 'eve@example.com', channel: 'web', conversations: 1, lastSeen: '1d ago', status: 'inactive' },
+  { id: '6', name: 'Frank Moore', email: 'frank@example.com', phone: '+1 555 0100', location: 'New York, US', channel: 'email', conversations: 2, lastSeen: '2d ago', status: 'inactive', company: 'Umbrella Inc' },
+  { id: '7', name: 'Grace Park', email: 'grace@example.com', channel: 'web', conversations: 5, lastSeen: '3d ago', status: 'inactive', tags: ['enterprise'], company: 'Initech' },
+  { id: '8', name: 'Henry Kim', email: 'henry@example.com', phone: '+1 555 0200', channel: 'web', conversations: 10, lastSeen: '4d ago', status: 'inactive', tags: ['vip', 'beta'] },
+  { id: '9', name: 'Iris Chen', email: 'iris@example.com', channel: 'email', conversations: 4, lastSeen: '5d ago', status: 'inactive', company: 'Globex Ltd' },
+  { id: '10', name: 'James Liu', email: 'james@example.com', phone: '+852 9876 5432', location: 'Hong Kong', channel: 'whatsapp', conversations: 7, lastSeen: '1w ago', status: 'inactive', tags: ['enterprise'] },
+]
+
+function ChannelBadge({ ch }: { ch: string }) {
+  const map: Record<string, string> = { web: 'info', whatsapp: 'success', sms: 'warning', email: 'muted' }
+  return <Badge variant={(map[ch] ?? 'muted') as 'info' | 'success' | 'warning' | 'muted'}>{ch}</Badge>
+}
+
+interface ContactDetailProps {
+  contact: Contact
+  onClose: () => void
+}
+
+function ContactDetail({ contact, onClose }: ContactDetailProps) {
+  return (
+    <DialogContent size="lg">
+      <DialogHeader>
+        <DialogTitle>Contact profile</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div className="flex gap-6">
+          {/* Left: summary */}
+          <div className="flex flex-col items-center gap-3 w-48 shrink-0 pt-2">
+            <Avatar name={contact.name} size="xl" />
+            <div className="text-center">
+              <p className="font-semibold text-[var(--text-primary)]">{contact.name}</p>
+              {contact.company && <p className="text-xs text-[var(--text-muted)] mt-0.5">{contact.company}</p>}
+            </div>
+            <div className="flex flex-wrap gap-1 justify-center">
+              <ChannelBadge ch={contact.channel} />
+              {contact.tags?.map((t) => (
+                <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--bg-overlay)] text-[var(--text-muted)] border border-[var(--border)]">{t}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: details */}
+          <div className="flex-1 grid grid-cols-2 gap-4">
+            {[
+              { label: 'Email', value: contact.email, icon: <Mail size={13} /> },
+              { label: 'Phone', value: contact.phone, icon: <Phone size={13} /> },
+              { label: 'Location', value: contact.location, icon: <Globe size={13} /> },
+              { label: 'Company', value: contact.company, icon: <Globe size={13} /> },
+              { label: 'Last seen', value: contact.lastSeen, icon: <Clock size={13} /> },
+              { label: 'Conversations', value: String(contact.conversations), icon: <MessageCircle size={13} /> },
+            ].filter((x) => x.value).map((item) => (
+              <div key={item.label} className="flex items-start gap-2">
+                <span className="mt-0.5 text-[var(--text-muted)]">{item.icon}</span>
+                <div>
+                  <p className="text-[10px] font-medium uppercase text-[var(--text-muted)]">{item.label}</p>
+                  <p className="text-sm text-[var(--text-primary)] mt-0.5">{item.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent conversations */}
+        <div className="mt-6 border-t border-[var(--border)] pt-4">
+          <p className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-3">Recent conversations</p>
+          <div className="space-y-2">
+            {Array.from({ length: Math.min(contact.conversations, 3) }, (_, i) => (
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-[var(--radius-md)] border border-[var(--border)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer">
+                <CheckCircle2 size={14} className="text-[var(--success)] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[var(--text-primary)] truncate">Conversation #{1000 + i} — {['Order support', 'Billing enquiry', 'Account access'][i % 3]}</p>
+                  <p className="text-xs text-[var(--text-muted)]">{i + 1}d ago · Resolved</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose}>Close</Button>
+        <Button className="gap-1.5"><MessageCircle size={13} /> Start conversation</Button>
+      </DialogFooter>
+    </DialogContent>
+  )
+}
+
 export function ContactsPage() {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Contact | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+
+  const filtered = MOCK_CONTACTS.filter((c) =>
+    !search ||
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.email?.toLowerCase().includes(search.toLowerCase()) ||
+    c.company?.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="border-b border-[var(--border)] bg-[var(--bg-surface)] px-6 pt-4 pb-0 shrink-0">
         <h1 className="text-base font-semibold text-[var(--text-primary)]">Inbox</h1>
         <SubNav items={SUBNAV} />
       </div>
-      <div className="flex-1 overflow-auto">
-        <StubPage title="Contacts" icon={Users} action="Import Contacts" />
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)] shrink-0">
+        <Input
+          placeholder="Search contacts…"
+          leftIcon={<Search size={13} />}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-72"
+        />
+        <Button variant="ghost" size="sm" className="gap-1.5"><Filter size={13} /> Filter</Button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" className="gap-1.5"><Upload size={13} /> Import</Button>
+          <Button variant="ghost" size="sm" className="gap-1.5"><Download size={13} /> Export</Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowNew(true)}>
+            <Plus size={14} /> New Contact
+          </Button>
+        </div>
       </div>
+
+      {/* Stats bar */}
+      <div className="flex items-center gap-6 px-6 py-2.5 bg-[var(--bg-overlay)] border-b border-[var(--border)] shrink-0">
+        {[
+          { label: 'Total', value: MOCK_CONTACTS.length },
+          { label: 'Active today', value: MOCK_CONTACTS.filter((c) => c.status === 'active').length },
+          { label: 'With email', value: MOCK_CONTACTS.filter((c) => c.email).length },
+          { label: 'VIP', value: MOCK_CONTACTS.filter((c) => c.tags?.includes('vip')).length },
+        ].map((s) => (
+          <div key={s.label} className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-[var(--text-primary)]">{s.value}</span>
+            <span className="text-xs text-[var(--text-muted)]">{s.label}</span>
+          </div>
+        ))}
+        <span className="ml-auto text-xs text-[var(--text-muted)]">{filtered.length} results</span>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-[var(--bg-surface)] border-b border-[var(--border)] z-10">
+            <tr>
+              {['Name', 'Email', 'Phone', 'Channel', 'Company', 'Conversations', 'Last seen', ''].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border)]">
+            {filtered.map((c) => (
+              <tr
+                key={c.id}
+                className="hover:bg-[var(--bg-hover)] transition-colors cursor-pointer group"
+                onClick={() => setSelected(c)}
+              >
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar name={c.name} size="sm" />
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text-primary)]">{c.name}</p>
+                      {c.tags && c.tags.length > 0 && (
+                        <div className="flex gap-1 mt-0.5">
+                          {c.tags.map((t) => (
+                            <span key={t} className="text-[10px] px-1.5 py-0 rounded-full bg-[var(--accent-muted)] text-[var(--accent)]">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 text-xs text-[var(--text-secondary)]">{c.email ?? '—'}</td>
+                <td className="px-4 py-2.5 text-xs text-[var(--text-secondary)]">{c.phone ?? '—'}</td>
+                <td className="px-4 py-2.5"><ChannelBadge ch={c.channel} /></td>
+                <td className="px-4 py-2.5 text-xs text-[var(--text-secondary)]">{c.company ?? '—'}</td>
+                <td className="px-4 py-2.5 text-center">
+                  <span className="text-xs font-medium text-[var(--text-primary)]">{c.conversations}</span>
+                </td>
+                <td className="px-4 py-2.5 text-xs text-[var(--text-muted)] whitespace-nowrap">
+                  <span className={cn('flex items-center gap-1', c.status === 'active' && 'text-[var(--success)]')}>
+                    {c.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] inline-block" />}
+                    {c.lastSeen}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--bg-overlay)] text-[var(--text-muted)] transition-all">
+                        <MoreHorizontal size={14} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setSelected(c)}>View profile</DropdownMenuItem>
+                      <DropdownMenuItem>Start conversation</DropdownMenuItem>
+                      <DropdownMenuItem>Create ticket</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem destructive>Delete contact</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Contact detail dialog */}
+      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null) }}>
+        {selected && <ContactDetail contact={selected} onClose={() => setSelected(null)} />}
+      </Dialog>
+
+      {/* New contact dialog */}
+      <Dialog open={showNew} onOpenChange={setShowNew}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>New contact</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Full name *</label>
+              <input
+                autoFocus
+                className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                placeholder="e.g. Jane Doe"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Email</label>
+              <input
+                className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                placeholder="jane@example.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">Phone</label>
+              <input
+                className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                placeholder="+1 555 0000"
+              />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
+            <Button disabled={!newName.trim()} onClick={() => setShowNew(false)}>Create contact</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

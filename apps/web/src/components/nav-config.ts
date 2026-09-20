@@ -57,7 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
         id: 'knowledge',
         label: 'Knowledge',
         icon: Brain,
-        path: '/build/knowledge',
+        path: '/build/knowledge/intents',
         subItems: [
           { id: 'kb-intents', label: 'Intents', path: '/build/knowledge/intents' },
           { id: 'kb-entities', label: 'Entities', path: '/build/knowledge/entities' },
