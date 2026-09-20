@@ -19,13 +19,12 @@ const HOST = process.env['HOST'] ?? '0.0.0.0'
 const FRONTEND_URL = process.env['FRONTEND_URL'] ?? 'http://localhost:5173'
 const JWT_SECRET = process.env['JWT_SECRET'] ?? 'dev-secret-change-me'
 
+const isDev = process.env['NODE_ENV'] !== 'production'
+
 const app = Fastify({
-  logger: {
-    transport: {
-      target: 'pino-pretty',
-      options: { colorize: true },
-    },
-  },
+  logger: isDev
+    ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
+    : true,
 })
 
 await app.register(cors, {
