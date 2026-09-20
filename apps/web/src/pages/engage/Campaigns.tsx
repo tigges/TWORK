@@ -99,7 +99,7 @@ export function CampaignsPage() {
       <div className="grid grid-cols-4 gap-px bg-[var(--border)] border-b border-[var(--border)] shrink-0">
         {[
           { label: 'Total campaigns', value: campaigns.length, icon: <Megaphone size={14} />, sub: `${campaigns.filter((c) => c.status === 'running').length} running` },
-          { label: 'Total audience', value: campaigns.reduce((s, c) => s + c.audience, 0).toLocaleString(), icon: <Users size={14} />, sub: 'across all campaigns' },
+          { label: 'Total audience', value: campaigns.reduce((s, c) => s + (c.audience ?? 0), 0).toLocaleString(), icon: <Users size={14} />, sub: 'across all campaigns' },
           { label: 'Total sent', value: campaigns.reduce((s, c) => s + (c.sent ?? 0), 0).toLocaleString(), icon: <Send size={14} />, sub: 'messages delivered' },
           { label: 'Avg open rate', value: '53.2%', icon: <BarChart2 size={14} />, sub: '+4.1% vs last month' },
         ].map((s) => (
@@ -123,7 +123,7 @@ export function CampaignsPage() {
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {filtered.map((c) => {
-              const st = STATUS_CONFIG[c.status]
+              const st = STATUS_CONFIG[c.status] ?? STATUS_CONFIG['draft']
               const chColor: Record<CampaignChannel, string> = { email: 'info', whatsapp: 'success', sms: 'warning', web: 'muted' }
               return (
                 <tr key={c.id} className="hover:bg-[var(--bg-hover)] transition-colors cursor-pointer group">
@@ -138,7 +138,7 @@ export function CampaignsPage() {
                     <Badge variant={chColor[c.channel] as 'info' | 'success' | 'warning' | 'muted'}>{c.channel}</Badge>
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-[var(--text-primary)]">
-                    {c.audience.toLocaleString()}
+                    {(c.audience ?? 0).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-[var(--text-secondary)]">
                     {c.sent?.toLocaleString() ?? '—'}

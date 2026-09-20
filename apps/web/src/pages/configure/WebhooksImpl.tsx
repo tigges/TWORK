@@ -127,7 +127,7 @@ export function WebhooksPage() {
           { label: 'Total', value: webhooks.length },
           { label: 'Active', value: webhooks.filter((w) => w.status === 'active').length },
           { label: 'Errors', value: webhooks.filter((w) => w.status === 'error').length },
-          { label: 'Avg success rate', value: `${(webhooks.reduce((s, w) => s + w.successRate, 0) / webhooks.length).toFixed(1)}%` },
+          { label: 'Avg success rate', value: webhooks.length ? `${(webhooks.reduce((s, w) => s + (w.successRate ?? 0), 0) / webhooks.length).toFixed(1)}%` : '—' },
         ].map((s) => (
           <div key={s.label} className="flex items-center gap-2">
             <span className="text-sm font-semibold text-[var(--text-primary)]">{s.value}</span>
@@ -147,7 +147,7 @@ export function WebhooksPage() {
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {webhooks.map((w) => {
-              const sc = STATUS_CFG[w.status]
+              const sc = STATUS_CFG[w.status] ?? STATUS_CFG['active']
               const successColor = w.successRate >= 95 ? 'text-[var(--success)]' : w.successRate >= 70 ? 'text-[var(--warning,#fbbf24)]' : 'text-[var(--error)]'
               return (
                 <tr key={w.id} className="hover:bg-[var(--bg-hover)] transition-colors group">
