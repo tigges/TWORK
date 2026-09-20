@@ -7,7 +7,7 @@ import type {
   Flow, FlowVersion, Intent, Entity, Faq, KnowledgeSource,
   Conversation, Message, Contact, Campaign, Template,
   Webhook, TeamMember, AnalyticsOverview, ConversationTrend, AuditEvent,
-  LlmConfig, SystemStatus,
+  LlmConfig, SystemStatus, SystemConfig,
 } from './api'
 
 // ── Flows ─────────────────────────────────────────────────────────────────────
@@ -360,4 +360,32 @@ export const DEMO_SYSTEM_STATUS: SystemStatus = {
     usedMemPct: 60,
   },
   ts: new Date().toISOString(),
+}
+
+// ── System Config ─────────────────────────────────────────────────────────────
+export const DEMO_SYSTEM_CONFIG: SystemConfig = {
+  auth: {
+    JWT_SECRET: { set: true, label: 'JWT Secret' },
+  },
+  database: {
+    DATABASE_URL: { set: true, label: 'PostgreSQL', endpoint: 'postgresql://postgres:5432' },
+  },
+  cache: {
+    REDIS_URL: { set: true, label: 'Redis / Valkey', endpoint: 'redis://valkey:6379' },
+  },
+  storage: {
+    S3_ENDPOINT: { set: true, label: 'S3 / MinIO endpoint', endpoint: 'http://minio:9000' },
+    S3_BUCKET:   { set: true, label: 'S3 Bucket', value: 'ybot-uploads' },
+    S3_REGION:   { set: true, label: 'S3 Region', value: 'us-east-1' },
+  },
+  llm: {
+    OPENAI_API_KEY:    { set: false, label: 'OpenAI API Key' },
+    ANTHROPIC_API_KEY: { set: false, label: 'Anthropic API Key' },
+    GROQ_API_KEY:      { set: false, label: 'Groq API Key' },
+    OLLAMA_BASE_URL:   { set: true, label: 'Ollama Base URL', endpoint: 'http://host.docker.internal:11434' },
+  },
+  app: {
+    NODE_ENV:     { set: true, label: 'Environment', value: 'production' },
+    FRONTEND_URL: { set: true, label: 'Frontend URL', value: 'http://192.168.0.11:7080' },
+  },
 }

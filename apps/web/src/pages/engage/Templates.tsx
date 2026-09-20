@@ -104,7 +104,21 @@ const CHANNEL_COLORS: Record<TemplateChannel, 'info' | 'success' | 'warning' | '
 
 export function TemplatesPage() {
   const { data: rawTemplates = [] } = useTemplates()
-  const templates = rawTemplates as unknown as Template[]
+  // Normalize API shape (approvalStatus + content.body) → component shape (status + body)
+  const templates = (rawTemplates as unknown as Array<{
+    id: string; name: string; channel: string
+    approvalStatus?: string; status?: string
+    content?: { body?: string }; body?: string
+    category?: string; usedIn?: number; language?: string
+    createdAt: string; updatedAt: string
+  }>).map((t) => ({
+    ...t,
+    status: (t.status ?? t.approvalStatus ?? 'draft') as ApprovalStatus,
+    body: t.body ?? (t.content as { body?: string } | undefined)?.body ?? '',
+    category: (t.category ?? 'marketing') as TemplateCategory,
+    usedIn: t.usedIn ?? 0,
+    language: t.language ?? 'en',
+  })) as Template[]
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState<TemplateChannel | 'all'>('all')
   const [preview, setPreview] = useState<Template | null>(null)
@@ -261,17 +275,17 @@ export function TemplatesPage() {
             </DialogHeader>
             <DialogBody className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                <Badge variant={CHANNEL_COLORS[preview.channel]}>{CHANNEL_ICONS[preview.channel]}{preview.channel}</Badge>
+                <Badge variant={CHANNEL_COLORS[preview.channel] ?? 'muted'}>{CHANNEL_ICONS[preview.channel]}{preview.channel}</Badge>
                 <Badge variant="muted" className="capitalize">{preview.category}</Badge>
-                <Badge variant={STATUS_CONFIG[preview.status].variant}>{STATUS_CONFIG[preview.status].icon}{STATUS_CONFIG[preview.status].label}</Badge>
-                <span className="text-xs text-[var(--text-muted)] flex items-center">{preview.language.toUpperCase()}</span>
+                {(() => { const st = STATUS_CONFIG[preview.status] ?? STATUS_CONFIG['draft']; return <Badge variant={st.variant}>{st.icon}{st.label}</Badge> })()}
+                <span className="text-xs text-[var(--text-muted)] flex items-center">{(preview.language ?? 'en').toUpperCase()}</span>
               </div>
               <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-overlay)] p-4">
                 <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{preview.body}</p>
               </div>
               <p className="text-[11px] text-[var(--text-muted)]">
                 Variables like <code className="bg-[var(--bg-overlay)] px-1 rounded font-mono">{`{{1}}`}</code> are filled at send time.
-                Used in {preview.usedIn} campaign{preview.usedIn !== 1 ? 's' : ''}.
+                Used in {preview.usedIn ?? 0} campaign{(preview.usedIn ?? 0) !== 1 ? 's' : ''}.
               </p>
             </DialogBody>
             <DialogFooter>

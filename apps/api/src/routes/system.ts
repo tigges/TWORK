@@ -103,4 +103,45 @@ export async function systemRoutes(app: FastifyInstance) {
       },
     }
   })
+
+  // Returns which env vars are configured — never the actual values.
+  app.get('/config', async () => {
+    const e = process.env
+    function isSet(key: string) { return !!e[key] && e[key] !== 'change-me-in-production' }
+    function maskUrl(url: string | undefined) {
+      if (!url) return null
+      try {
+        const u = new URL(url)
+        return `${u.protocol}//${u.hostname}:${u.port || (u.protocol === 'https:' ? 443 : 5432)}`
+      } catch { return '(configured)' }
+    }
+    return {
+      data: {
+        auth: {
+          JWT_SECRET: { set: isSet('JWT_SECRET'), label: 'JWT Secret' },
+        },
+        database: {
+          DATABASE_URL: { set: isSet('DATABASE_URL'), label: 'PostgreSQL', endpoint: maskUrl(e['DATABASE_URL']) },
+        },
+        cache: {
+          REDIS_URL: { set: isSet('REDIS_URL'), label: 'Redis / Valkey', endpoint: maskUrl(e['REDIS_URL']) },
+        },
+        storage: {
+          S3_ENDPOINT: { set: isSet('S3_ENDPOINT'), label: 'S3 / MinIO endpoint', endpoint: e['S3_ENDPOINT'] ?? null },
+          S3_BUCKET:   { set: isSet('S3_BUCKET'),   label: 'S3 Bucket',           value: e['S3_BUCKET'] ?? null },
+          S3_REGION:   { set: isSet('S3_REGION'),   label: 'S3 Region',           value: e['S3_REGION'] ?? null },
+        },
+        llm: {
+          OPENAI_API_KEY:    { set: isSet('OPENAI_API_KEY'),    label: 'OpenAI API Key' },
+          ANTHROPIC_API_KEY: { set: isSet('ANTHROPIC_API_KEY'), label: 'Anthropic API Key' },
+          GROQ_API_KEY:      { set: isSet('GROQ_API_KEY'),      label: 'Groq API Key' },
+          OLLAMA_BASE_URL:   { set: isSet('OLLAMA_BASE_URL'),   label: 'Ollama Base URL', endpoint: e['OLLAMA_BASE_URL'] ?? null },
+        },
+        app: {
+          NODE_ENV:     { set: true, label: 'Environment', value: e['NODE_ENV'] ?? 'development' },
+          FRONTEND_URL: { set: isSet('FRONTEND_URL'), label: 'Frontend URL', value: e['FRONTEND_URL'] ?? null },
+        },
+      },
+    }
+  })
 }
