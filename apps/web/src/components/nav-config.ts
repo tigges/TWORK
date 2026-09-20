@@ -13,6 +13,7 @@ import {
   Users,
   FileText,
   Repeat2,
+  Server,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -165,6 +166,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Settings',
         icon: Settings,
         path: '/settings',
+      },
+      {
+        id: 'system-status',
+        label: 'System Status',
+        icon: Server,
+        path: '/admin/system-status',
       },
     ],
   },

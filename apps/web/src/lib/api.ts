@@ -185,6 +185,10 @@ export const audit = {
   list: (params?: Record<string, string>) => apiFetch<{ data: AuditEvent[] }>(`/audit?${new URLSearchParams(params ?? {})}`),
 }
 
+export const system = {
+  status: () => apiFetch<{ data: SystemStatus }>('/system/status'),
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface BotSummary { id: string; name: string; description?: string; status: string; environments: Array<{ id: string; kind: string; name: string }> }
 export interface Flow { id: string; name: string; description?: string; kind: string; tags: string[]; updatedAt: string; versions: FlowVersion[] }
@@ -209,3 +213,14 @@ export interface TeamMember { id: string; displayName: string; email: string; me
 export interface AnalyticsOverview { totalConversations: number; resolvedConversations: number; resolutionRate: number; escalationRate: number; totalContacts: number; csatScore: number; avgResponseTimeMs: number; botHandledPct: number }
 export interface ConversationTrend { date: string; conversations: number; resolved: number; escalated: number }
 export interface AuditEvent { id: string; action: string; resource?: string; metadata: Record<string, unknown>; createdAt: string; user?: { displayName: string; email: string } }
+
+export interface DockerContainer { id: string; name: string; image: string; state: string; status: string; created?: number }
+export interface ServicePing { ok: boolean; latencyMs: number }
+export interface RagSourceEntry { id: string; name: string; lastSyncAt?: string; _count: { documents: number } }
+export interface SystemStatus {
+  services: { database: ServicePing; redis: ServicePing }
+  containers: DockerContainer[]
+  rag: { sources: number; documents: number; chunks: number; sourceList: RagSourceEntry[] }
+  system: { platform: string; uptime: number; nodeVersion: string; cpuCount: number; totalMemMb: number; freeMemMb: number; usedMemPct: number }
+  ts: string
+}
