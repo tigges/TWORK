@@ -122,7 +122,7 @@ export function EntitiesPage() {
                   <p className="text-sm font-medium text-[var(--text-primary)] truncate">{entity.name}</p>
                   <div className="flex items-center gap-1 mt-0.5">
                     <Badge variant="muted">{entity.kind}</Badge>
-                    <span className="text-xs text-[var(--text-muted)]">{entity.values.length} values</span>
+                    <span className="text-xs text-[var(--text-muted)]">{(entity.values ?? []).length} values</span>
                   </div>
                 </div>
               </button>
@@ -136,9 +136,9 @@ export function EntitiesPage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-base font-semibold text-[var(--text-primary)]">{selected.name}</h2>
-                <div className="flex gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1">
                   <Badge variant="info">{selected.kind}</Badge>
-                  <span className="text-xs text-[var(--text-muted)]">{selected.values.length} values</span>
+                  <span className="text-xs text-[var(--text-muted)]">{(selected.values ?? []).length} values</span>
                 </div>
               </div>
               <Button size="sm" onClick={() => setSaved(true)}>
@@ -155,7 +155,7 @@ export function EntitiesPage() {
                       <Trash2 size={12} />
                     </button>
                   </div>
-                  {val.synonyms.length > 0 && (
+                  {val.synonyms && val.synonyms.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {val.synonyms.map((s: string, j: number) => (
                         <span key={j} className="text-[10px] rounded-full bg-[var(--bg-overlay)] border border-[var(--border)] px-2 py-0.5 text-[var(--text-muted)]">
