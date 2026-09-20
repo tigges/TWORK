@@ -11,14 +11,62 @@ import type {
 } from './api'
 
 // ── Flows ─────────────────────────────────────────────────────────────────────
-const BASE_GRAPH = { nodes: [], edges: [] }
+const Y = 200
+const mkNode = (id: string, x: number, kind: string, label: string, config: Record<string, unknown> = {}) =>
+  ({ id, type: 'flow-node', position: { x, y: Y }, data: { kind, label, config } })
+const mkEdge = (id: string, source: string, target: string, label?: string) =>
+  ({ id, source, target, label, type: 'default' })
+
+const WELCOME_GRAPH = {
+  nodes: [
+    mkNode('n1',   80, 'trigger',      'Start',          { event: 'conversation.started' }),
+    mkNode('n2',  320, 'send_message', 'Greeting',       { text: 'Hi there! 👋 I\'m the YBot assistant. How can I help you today?' }),
+    mkNode('n3',  580, 'ask_question', 'Route',          { question: 'Choose an option:', options: ['Order / Delivery', 'Returns & Refunds', 'Billing', 'Speak to an agent'], variable: 'route' }),
+    mkNode('n4',  840, 'condition',    'Route check',    { variable: 'route', operator: 'equals' }),
+    mkNode('n5', 1100, 'handover',     'Agent handover', { team: 'support' }),
+  ],
+  edges: [
+    mkEdge('e1', 'n1', 'n2'),
+    mkEdge('e2', 'n2', 'n3'),
+    mkEdge('e3', 'n3', 'n4'),
+    mkEdge('e4', 'n4', 'n5', 'agent'),
+  ],
+}
+
+const ORDER_GRAPH = {
+  nodes: [
+    mkNode('n1',  80,  'trigger',      'Start',           { event: 'intent.order_status' }),
+    mkNode('n2',  320, 'ask_question', 'Order number',    { question: 'What\'s your order number? (e.g. AC-483920)', variable: 'order_number', validate: 'regex' }),
+    mkNode('n3',  580, 'http_request', 'Lookup order',    { method: 'GET', url: 'https://api.acme.com/orders/{{order_number}}', headers: {}, resultVariable: 'order' }),
+    mkNode('n4',  840, 'send_message', 'Status reply',    { text: 'Order {{order.id}} is currently **{{order.status}}**. Estimated delivery: {{order.estimatedDelivery}}.' }),
+    mkNode('n5', 1100, 'send_message', 'Closing',         { text: 'Is there anything else I can help you with?' }),
+  ],
+  edges: [mkEdge('e1','n1','n2'), mkEdge('e2','n2','n3'), mkEdge('e3','n3','n4'), mkEdge('e4','n4','n5')],
+}
+
+const RETURN_GRAPH = {
+  nodes: [
+    mkNode('n1',  80,  'trigger',      'Start',           { event: 'intent.return_request' }),
+    mkNode('n2',  320, 'ask_question', 'Order number',    { question: 'Please share your order number:', variable: 'order_number' }),
+    mkNode('n3',  580, 'ask_question', 'Return reason',   { question: 'What\'s the reason for return?', options: ['Damaged / defective', 'Wrong item', 'Changed my mind', 'Other'], variable: 'reason' }),
+    mkNode('n4',  840, 'send_message', 'Confirm return',  { text: 'Got it! I\'ll raise a return for order {{order_number}}. You\'ll receive a prepaid label by email within 2 hours.' }),
+    mkNode('n5', 1100, 'set_variable', 'Tag conversation',{ variable: 'tags', value: 'return,pending-label' }),
+    mkNode('n6', 1360, 'handover',     'Notify team',     { team: 'returns', silent: true }),
+  ],
+  edges: [mkEdge('e1','n1','n2'), mkEdge('e2','n2','n3'), mkEdge('e3','n3','n4'), mkEdge('e4','n4','n5'), mkEdge('e5','n5','n6')],
+}
 
 export const DEMO_FLOWS: Flow[] = [
-  { id: 'f1', name: 'Welcome & Routing', description: 'Greets visitors and routes to the right flow', kind: 'flow', tags: ['welcome', 'routing'], updatedAt: '2026-09-18T10:00:00Z', versions: [{ id: 'fv1', version: 2, status: 'draft', graph: BASE_GRAPH }] },
-  { id: 'f2', name: 'Order Status', description: 'Looks up order details via API', kind: 'flow', tags: ['orders', 'api'], updatedAt: '2026-09-17T14:00:00Z', versions: [{ id: 'fv2', version: 1, status: 'published', graph: BASE_GRAPH, publishedAt: '2026-09-10T09:00:00Z' }] },
-  { id: 'f3', name: 'Return Request', description: 'Handles returns and creates tickets', kind: 'flow', tags: ['returns', 'tickets'], updatedAt: '2026-09-15T08:00:00Z', versions: [{ id: 'fv3', version: 1, status: 'published', graph: BASE_GRAPH, publishedAt: '2026-09-12T11:00:00Z' }] },
-  { id: 'f4', name: 'Lead Capture', description: 'Qualifies inbound leads and pushes to CRM', kind: 'flow', tags: ['sales', 'crm'], updatedAt: '2026-09-14T16:00:00Z', versions: [{ id: 'fv4', version: 1, status: 'draft', graph: BASE_GRAPH }] },
-  { id: 'f5', name: 'CSAT Survey', description: 'Post-conversation satisfaction survey', kind: 'flow', tags: ['csat', 'survey'], updatedAt: '2026-09-13T12:00:00Z', versions: [{ id: 'fv5', version: 1, status: 'published', graph: BASE_GRAPH, publishedAt: '2026-09-08T10:00:00Z' }] },
+  { id: 'f1', name: 'Welcome & Routing',  description: 'Greets visitors and routes to the right flow', kind: 'flow', tags: ['welcome', 'routing'], updatedAt: '2026-09-18T10:00:00Z',
+    versions: [{ id: 'fv1', version: 2, status: 'draft',     graph: WELCOME_GRAPH }] },
+  { id: 'f2', name: 'Order Status',       description: 'Looks up order details via API',                kind: 'flow', tags: ['orders', 'api'],     updatedAt: '2026-09-17T14:00:00Z',
+    versions: [{ id: 'fv2', version: 1, status: 'published', graph: ORDER_GRAPH,   publishedAt: '2026-09-10T09:00:00Z' }] },
+  { id: 'f3', name: 'Return Request',     description: 'Handles returns and creates tickets',            kind: 'flow', tags: ['returns', 'tickets'], updatedAt: '2026-09-15T08:00:00Z',
+    versions: [{ id: 'fv3', version: 1, status: 'published', graph: RETURN_GRAPH,  publishedAt: '2026-09-12T11:00:00Z' }] },
+  { id: 'f4', name: 'Lead Capture',       description: 'Qualifies inbound leads and pushes to CRM',     kind: 'flow', tags: ['sales', 'crm'],       updatedAt: '2026-09-14T16:00:00Z',
+    versions: [{ id: 'fv4', version: 1, status: 'draft', graph: { nodes: [mkNode('n1',80,'trigger','Start',{event:'conversation.started'})], edges: [] } }] },
+  { id: 'f5', name: 'CSAT Survey',        description: 'Post-conversation satisfaction survey',          kind: 'flow', tags: ['csat', 'survey'],     updatedAt: '2026-09-13T12:00:00Z',
+    versions: [{ id: 'fv5', version: 1, status: 'published', graph: { nodes: [], edges: [] },            publishedAt: '2026-09-08T10:00:00Z' }] },
 ]
 
 // ── Knowledge ─────────────────────────────────────────────────────────────────
@@ -158,13 +206,70 @@ export const DEMO_CAMPAIGNS = [
 ] as unknown as Campaign[]
 
 // ── Templates ─────────────────────────────────────────────────────────────────
-export const DEMO_TEMPLATES: Template[] = [
-  { id: 't1', name: 'Order Confirmation', channel: 'whatsapp', approvalStatus: 'approved', content: { body: 'Hi {{1}}, your order {{2}} is confirmed! Delivery: {{3}}.' }, variables: ['customer_name', 'order_number', 'delivery_date'] },
-  { id: 't2', name: 'Shipping Update', channel: 'whatsapp', approvalStatus: 'approved', content: { body: 'Order {{1}} is on its way! Tracking: {{2}}. ETA: {{3}}.' }, variables: ['order_number', 'tracking_url', 'eta'] },
-  { id: 't3', name: 'Return Confirmation', channel: 'whatsapp', approvalStatus: 'pending', content: { body: 'Hi {{1}}, your return for order {{2}} received. Refund of {{3}} in 3-5 days.' }, variables: ['customer_name', 'order_number', 'refund_amount'] },
-  { id: 't4', name: 'Welcome Email', channel: 'email', approvalStatus: 'approved', content: { subject: 'Welcome to Acme!', body: 'Hi {{first_name}}, welcome aboard!' }, variables: ['first_name'] },
-  { id: 't5', name: 'Cart Abandonment', channel: 'sms', approvalStatus: 'approved', content: { body: 'Hi {{1}}, you left items in your cart! Complete: {{2}}' }, variables: ['first_name', 'cart_url'] },
-]
+// All fields match the Templates page's local Template interface
+// (status, body, category, language, usedIn, createdAt, updatedAt).
+export const DEMO_TEMPLATES = [
+  { id: 't1', name: 'Order Confirmation', channel: 'whatsapp',
+    status: 'approved', category: 'transactional', language: 'en',
+    body: 'Hi {{1}}! Your order #{{2}} is confirmed and will be delivered by {{3}}. Track here: {{4}}',
+    usedIn: 8, createdAt: '1m ago', updatedAt: '1w ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['customer_name', 'order_number', 'delivery_date', 'tracking_url'] },
+  { id: 't2', name: 'Shipping Update', channel: 'whatsapp',
+    status: 'approved', category: 'transactional', language: 'en',
+    body: 'Order #{{1}} is on its way! Tracking: {{2}}. ETA: {{3}}.',
+    usedIn: 5, createdAt: '1m ago', updatedAt: '1w ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['order_number', 'tracking_url', 'eta'] },
+  { id: 't3', name: 'Return Confirmation', channel: 'whatsapp',
+    status: 'pending', category: 'transactional', language: 'en',
+    body: 'Hi {{1}}, return for order #{{2}} received. Refund of {{3}} in 3–5 days.',
+    usedIn: 2, createdAt: '3w ago', updatedAt: '2d ago',
+    approvalStatus: 'pending', content: { body: '' }, variables: ['customer_name', 'order_number', 'refund_amount'] },
+  { id: 't4', name: 'Welcome Email', channel: 'email',
+    status: 'approved', category: 'transactional', language: 'en',
+    body: 'Hi {{first_name}}, welcome aboard! Your account is ready. Get started here: {{link}}',
+    usedIn: 14, createdAt: '2m ago', updatedAt: '2m ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['first_name', 'link'] },
+  { id: 't5', name: 'Cart Abandonment', channel: 'email',
+    status: 'approved', category: 'marketing', language: 'en',
+    body: 'Hey {{1}}, you left something behind! Complete your purchase and save 10% with code COMEBACK.',
+    usedIn: 3, createdAt: '3w ago', updatedAt: '5d ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['first_name'] },
+  { id: 't6', name: 'OTP Verification', channel: 'sms',
+    status: 'approved', category: 'utility', language: 'en',
+    body: 'Your YBot verification code is {{1}}. Valid for 10 minutes. Do not share this code.',
+    usedIn: 12, createdAt: '2m ago', updatedAt: '2m ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['otp_code'] },
+  { id: 't7', name: 'CSAT Survey', channel: 'whatsapp',
+    status: 'approved', category: 'support', language: 'en',
+    body: 'Hi {{1}}, how did we do? Rate your experience 1–5 ⭐. Your feedback helps us improve!',
+    usedIn: 6, createdAt: '1m ago', updatedAt: '3d ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['customer_name'] },
+  { id: 't8', name: 'Support Ticket Created', channel: 'email',
+    status: 'approved', category: 'support', language: 'en',
+    body: 'Hi {{1}}, your support ticket #{{2}} has been created. We\'ll respond within 24h. View: {{3}}',
+    usedIn: 4, createdAt: '2m ago', updatedAt: '2m ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['first_name', 'ticket_id', 'ticket_url'] },
+  { id: 't9', name: 'Appointment Reminder', channel: 'sms',
+    status: 'approved', category: 'utility', language: 'en',
+    body: 'Reminder: your appointment is on {{1}} at {{2}}. Reply CANCEL to cancel.',
+    usedIn: 3, createdAt: '1m ago', updatedAt: '4d ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['date', 'time'] },
+  { id: 't10', name: 'Black Friday Sale', channel: 'email',
+    status: 'approved', category: 'marketing', language: 'en',
+    body: '🛍️ Our biggest sale of the year is here! Up to 60% off everything. Use code BLACKFRIDAY.',
+    usedIn: 1, createdAt: '2w ago', updatedAt: '3d ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: [] },
+  { id: 't11', name: 'Re-engagement Nudge', channel: 'whatsapp',
+    status: 'draft', category: 'marketing', language: 'en',
+    body: 'Hi {{1}}! We miss you 👋 It\'s been a while. Here\'s 15% off your next order: {{2}}',
+    usedIn: 0, createdAt: '1w ago', updatedAt: '1d ago',
+    approvalStatus: 'draft', content: { body: '' }, variables: ['customer_name', 'discount_code'] },
+  { id: 't12', name: 'Delivery Failed', channel: 'sms',
+    status: 'approved', category: 'transactional', language: 'en',
+    body: 'We couldn\'t deliver order #{{1}}. Schedule redelivery: {{2}} or collect from: {{3}}',
+    usedIn: 2, createdAt: '3w ago', updatedAt: '1w ago',
+    approvalStatus: 'approved', content: { body: '' }, variables: ['order_number', 'redeliver_url', 'pickup_address'] },
+] as unknown as Template[]
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 // Extra fields (status, successRate, lastTriggered) satisfy the Webhooks page's local interface.
