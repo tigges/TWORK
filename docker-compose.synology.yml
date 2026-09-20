@@ -1,32 +1,43 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.synology.yml — Synology NAS overrides
-# Usage: docker compose -f docker-compose.yml -f docker-compose.synology.yml up -d
+# docker-compose.synology.yml — Synology NAS (AVIORI) overrides
+# Usage:
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.synology.yml \
+#                  --env-file .env.production up -d
 # ─────────────────────────────────────────────────────────────────────────────
 version: "3.9"
 
 services:
   postgres:
     volumes:
-      - /volume1/docker/ybot/pgdata:/var/lib/postgresql/data
+      - ${PGDATA_PATH:-/volume1/docker/ybot/pgdata}:/var/lib/postgresql/data
 
   valkey:
     volumes:
-      - /volume1/docker/ybot/valkey:/data
+      - ${VALKEY_PATH:-/volume1/docker/ybot/valkey}:/data
 
   minio:
     volumes:
-      - /volume1/docker/ybot/minio:/data
+      - ${MINIO_PATH:-/volume1/docker/ybot/minio}:/data
+
+  api:
+    image: ghcr.io/tigges/yai/ybot-api:${IMAGE_TAG:-latest}
+    # Ollama may run natively on NAS or another LAN machine
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+
+  web:
+    image: ghcr.io/tigges/yai/ybot-web:${IMAGE_TAG:-latest}
 
   caddy:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - /volume1/docker/ybot/caddy/data:/data
-      - /volume1/docker/ybot/caddy/config:/config
+      - ${CADDY_DATA_PATH:-/volume1/docker/ybot/caddy/data}:/data
+      - ${CADDY_CONFIG_PATH:-/volume1/docker/ybot/caddy/config}:/config
     ports:
-      - "8080:80"    # Use 8080 to avoid conflicts with DSM on port 80
-      - "8443:443"
-
-  # Ollama runs natively on NAS or another machine; point to it
-  api:
-    environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # Synology DSM occupies port 80/443; shift to 8080/8443
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    extra_hosts:
+      # Allow Caddy to reach Ollama running natively on the NAS host
+      - "host.docker.internal:host-gateway"
