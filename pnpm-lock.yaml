@@ -170,6 +170,9 @@ importers:
       '@prisma/client':
         specifier: ^6.1.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      bcryptjs:
+        specifier: ^2.4.3
+        version: 2.4.3
     devDependencies:
       prisma:
         specifier: ^6.1.0

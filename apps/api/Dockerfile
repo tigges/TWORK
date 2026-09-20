@@ -32,6 +32,10 @@ FROM node:22-alpine AS runner
 
 RUN apk add --no-cache curl
 
+# Install prisma CLI globally so migrations can be run from this container.
+# Version pinned to match packages/db devDependency.
+RUN npm install -g prisma@6 --ignore-scripts
+
 WORKDIR /app
 
 # Root node_modules: pnpm virtual store + workspace package symlinks (Docker

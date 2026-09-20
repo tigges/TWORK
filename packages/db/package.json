@@ -21,7 +21,8 @@
     "studio": "prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.1.0"
+    "@prisma/client": "^6.1.0",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
