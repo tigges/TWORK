@@ -76,16 +76,17 @@ jobs:
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
-      # ── Optional: SSH deploy to AVIORI ────────────────────────────────────────
-      # Set these secrets in Settings → Secrets:
+      # ── Optional: SSH deploy to AVIORI ─────────────────────────────────────
+      # Add these secrets in Settings → Secrets → Actions to enable auto-deploy:
       #   AVIORI_HOST  — NAS IP or hostname
-      #   AVIORI_USER  — SSH user (e.g. admin or ubuntu)
-      #   AVIORI_KEY   — private SSH key
-      #   AVIORI_PATH  — path to docker-compose files on the NAS, e.g. /volume1/docker/ybot
+      #   AVIORI_USER  — SSH user (e.g. admin)
+      #   AVIORI_KEY   — private SSH key (contents of ~/.ssh/id_ed25519)
+      #   AVIORI_PATH  — path to compose files, e.g. /volume1/docker/ybot/src
+      # When secrets are absent the step is skipped (continue-on-error keeps
+      # the build green while AVIORI is not yet configured).
       - name: Deploy to AVIORI
-        if: >
-          github.ref == 'refs/heads/main' &&
-          secrets.AVIORI_HOST != ''
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.AVIORI_HOST }}
