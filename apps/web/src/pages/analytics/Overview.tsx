@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, Badge, Button } from '@ybot/ui'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useAnalyticsOverview, useConversationTrends } from '../../lib/hooks'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   PieChart, Pie, Cell, RadialBarChart, RadialBar,
@@ -125,6 +126,11 @@ const TOOLTIP_STYLE = {
 
 export function AnalyticsOverviewPage() {
   const [range, setRange] = useState('Last 7 days')
+  const { data: overview } = useAnalyticsOverview()
+  const { data: trends } = useConversationTrends()
+
+  // Use API data if available, otherwise fall back to static mock
+  const convTrend = (trends && trends.length > 0) ? trends : convTrendData
 
   return (
     <div className="flex flex-col h-full">
@@ -156,16 +162,16 @@ export function AnalyticsOverviewPage() {
       <div className="flex-1 overflow-auto p-6 space-y-6">
         {/* KPI tiles */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <MetricTile label="Total Conversations" value="851" change="+12.5%" positive icon={<MessageSquare size={20} />} />
-          <MetricTile label="Resolution Rate" value="91.4%" change="+3.2%" positive icon={<CheckCircle size={20} />} sub="Bot: 64% · Agent: 27%" />
-          <MetricTile label="CSAT Score" value="84.5" change="+2.1%" positive icon={<ThumbsUp size={20} />} sub="Out of 100 · 312 responses" />
-          <MetricTile label="Avg Response Time" value="1.4s" change="-18%" positive icon={<Clock size={20} />} sub="Bot: 0.3s · Agent: 48s" />
+          <MetricTile label="Total Conversations" value={String(overview?.totalConversations ?? 851)} change="+12.5%" positive icon={<MessageSquare size={20} />} />
+          <MetricTile label="Resolution Rate" value={`${overview?.resolutionRate?.toFixed(1) ?? 91.4}%`} change="+3.2%" positive icon={<CheckCircle size={20} />} sub={`Bot: ${overview?.botHandledPct ?? 64}% · Agent handover`} />
+          <MetricTile label="CSAT Score" value={String(overview?.csatScore ?? 84.5)} change="+2.1%" positive icon={<ThumbsUp size={20} />} sub="Out of 100" />
+          <MetricTile label="Avg Response Time" value={`${((overview?.avgResponseTimeMs ?? 1400) / 1000).toFixed(1)}s`} change="-18%" positive icon={<Clock size={20} />} sub="Bot: 0.3s · Agent: 48s" />
         </div>
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <MetricTile label="Active Users" value="1,247" change="+8.1%" positive icon={<Users size={20} />} />
-          <MetricTile label="Bot Handled" value="64%" change="+5.3%" positive icon={<Bot size={20} />} sub="543 of 851 resolved by bot" />
-          <MetricTile label="Agent Handovers" value="22%" change="-2.4%" positive icon={<UserCheck size={20} />} sub="187 conversations transferred" />
-          <MetricTile label="Escalation Rate" value="9.1%" change="-1.2%" positive icon={<TrendingUp size={20} />} sub="77 escalations this period" />
+          <MetricTile label="Active Users" value={String(overview?.totalContacts ?? 1247)} change="+8.1%" positive icon={<Users size={20} />} />
+          <MetricTile label="Bot Handled" value={`${overview?.botHandledPct ?? 64}%`} change="+5.3%" positive icon={<Bot size={20} />} sub={`${Math.round(((overview?.botHandledPct ?? 64) / 100) * (overview?.totalConversations ?? 851))} resolved by bot`} />
+          <MetricTile label="Agent Handovers" value="22%" change="-2.4%" positive icon={<UserCheck size={20} />} sub="conversations transferred" />
+          <MetricTile label="Escalation Rate" value={`${overview?.escalationRate?.toFixed(1) ?? 9.1}%`} change="-1.2%" positive icon={<TrendingUp size={20} />} sub="escalations this period" />
         </div>
 
         {/* Row 1: Conversation trend + CSAT */}
@@ -177,7 +183,7 @@ export function AnalyticsOverviewPage() {
             </CardHeader>
             <div className="px-4 pb-4 h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={convTrendData}>
+                <AreaChart data={convTrend}>
                   <defs>
                     <linearGradient id="convGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />

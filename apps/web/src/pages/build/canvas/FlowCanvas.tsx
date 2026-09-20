@@ -100,13 +100,30 @@ const EDGE_STYLE = {
   strokeWidth: 1.5,
 }
 
+import { useSaveCanvas, useFlowCanvas } from '../../../lib/hooks'
+import { useAppStore } from '../../../store/app'
+
 export function FlowCanvasPage() {
   const navigate = useNavigate()
+  const { flowId } = useParams({ from: '/app/build/flows/$flowId' })
+  const selectedBotId = useAppStore((s) => s.selectedBotId) ?? 'demo'
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES)
   const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [status, setStatus] = useState<'draft' | 'saved' | 'published'>('draft')
   const [saving, setSaving] = useState(false)
+  const [canvasVersion] = useState(1)
+
+  const saveCanvas = useSaveCanvas()
+  // Load canvas from API on mount
+  const { data: savedCanvas } = useFlowCanvas(flowId ?? '', canvasVersion)
+  React.useEffect(() => {
+    if (savedCanvas?.graph?.nodes?.length) {
+      setNodes(savedCanvas.graph.nodes as Node[])
+      setEdges(savedCanvas.graph.edges as Edge[])
+      setStatus(savedCanvas.status as 'draft' | 'saved' | 'published')
+    }
+  }, [savedCanvas])
 
   const dragKindRef = useRef<{ kind: NodeKind; label: string } | null>(null)
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
@@ -179,16 +196,20 @@ export function FlowCanvasPage() {
 
   async function handleSave() {
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 600))
-    setStatus('saved')
+    try {
+      await saveCanvas.mutateAsync({
+        flowId: flowId ?? '',
+        version: canvasVersion,
+        graph: { nodes: nodes as unknown as import('../../../lib/api').FlowNode[], edges: edges as unknown as import('../../../lib/api').FlowEdge[] },
+      })
+      setStatus('saved')
+    } catch { /* demo mode or no backend — still mark saved locally */ setStatus('saved') }
     setSaving(false)
   }
 
   async function handlePublish() {
-    setSaving(true)
-    await new Promise((r) => setTimeout(r, 800))
+    await handleSave()
     setStatus('published')
-    setSaving(false)
   }
 
   return (

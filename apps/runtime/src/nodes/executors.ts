@@ -119,3 +119,53 @@ export async function executeCreateTicket(ctx: NodeContext): Promise<NodeResult>
 export async function executeEndFlow(_ctx: NodeContext): Promise<NodeResult> {
   return { output: { completed: true } }
 }
+
+// ── search_knowledge ──────────────────────────────────────────────────────────
+export async function executeSearchKnowledge(ctx: NodeContext): Promise<NodeResult> {
+  const { config, session, services } = ctx
+  const query = interpolate(String(config['query'] ?? session.variables.flow['last_user_message'] ?? ''), {
+    ...session.variables.flow,
+    contact: session.variables.contact,
+  })
+  try {
+    // pgvector RAG query via the db service (requires vector extension and embedding column)
+    const results = await services.db.$queryRawUnsafe<Array<{ id: string; content: string; similarity: number }>>(
+      `SELECT id, content, 1 - (embedding <=> $1::vector) AS similarity
+       FROM "DocumentChunk"
+       WHERE tenant_id = $2
+       ORDER BY embedding <=> $1::vector
+       LIMIT 3`,
+      JSON.stringify((await services.llm.embed({ texts: [query] })).embeddings[0] ?? []),
+      session.tenantId,
+    )
+    if (results.length === 0) {
+      const fallback = String(config['fallback'] ?? "I'm sorry, I couldn't find an answer to that. Let me connect you with an agent.")
+      return { output: { answer: fallback, sources: [] }, newMessages: [{ direction: 'outbound', content: { text: fallback } }] }
+    }
+    const answer = results[0]!.content
+    return { output: { answer, sources: results }, newMessages: [{ direction: 'outbound', content: { text: answer } }] }
+  } catch {
+    const fallback = String(config['fallback'] ?? "I'm sorry, I couldn't find an answer right now.")
+    return { output: { answer: fallback, sources: [] }, newMessages: [{ direction: 'outbound', content: { text: fallback } }] }
+  }
+}
+
+// ── llm_generate ──────────────────────────────────────────────────────────────
+export async function executeLlmGenerate(ctx: NodeContext): Promise<NodeResult> {
+  const { config, session, services } = ctx
+  const systemPrompt = String(config['systemPrompt'] ?? 'You are a helpful assistant.')
+  const prompt = interpolate(String(config['prompt'] ?? '{{flow.last_user_message}}'), {
+    ...session.variables.flow,
+    contact: session.variables.contact,
+  })
+  try {
+    const response = await services.llm.complete({ messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ] })
+    const text = response.content ?? "I'm sorry, I couldn't generate a response."
+    return { output: { generated: text }, newMessages: [{ direction: 'outbound', content: { text } }] }
+  } catch {
+    return { output: { generated: '' }, newMessages: [{ direction: 'outbound', content: { text: "I'm having trouble right now. Let me get a human agent." } }] }
+  }
+}

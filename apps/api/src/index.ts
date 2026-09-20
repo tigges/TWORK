@@ -11,6 +11,7 @@ import { knowledgeRoutes } from './routes/knowledge.js'
 import { conversationsRoutes, ticketsRoutes, contactsRoutes } from './routes/inbox.js'
 import { campaignsRoutes, templatesRoutes } from './routes/engage.js'
 import { channelsRoutes, webhooksRoutes, teamRoutes, analyticsRoutes, auditRoutes } from './routes/config.js'
+import { startKnowledgeSyncWorker } from './workers/knowledge-sync.js'
 import { authMiddleware } from './middleware/auth.js'
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
@@ -65,6 +66,8 @@ await app.register(auditRoutes, { prefix: '/api/v1/audit' })
 try {
   await app.listen({ port: PORT, host: HOST })
   console.log(`API running on http://${HOST}:${PORT}`)
+  // Start background workers (non-blocking)
+  startKnowledgeSyncWorker().catch(() => {})
 } catch (err) {
   app.log.error(err)
   process.exit(1)

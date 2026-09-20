@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { PrismaClient } from '@ybot/db'
 import { z } from 'zod'
+import { processInboundMessage } from '../runtime-bridge.js'
 
 const prisma = new PrismaClient()
 type JWT = { sub: string; tenantId: string; role: string }
@@ -69,14 +70,30 @@ export async function conversationsRoutes(app: FastifyInstance) {
     return { data: messages }
   })
 
-  // POST /conversations/:id/messages  (agent reply)
+  // POST /conversations/:id/messages  (agent reply or inbound user message)
   app.post('/:id/messages', async (request, reply) => {
     const { tenantId, sub: userId } = request.user as JWT
     const { id } = request.params as { id: string }
-    const body = z.object({ content: z.object({ text: z.string().min(1) }), authorKind: z.enum(['agent', 'bot', 'user']).default('agent'), isInternalNote: z.boolean().default(false) }).safeParse(request.body)
+    const body = z.object({
+      content: z.object({ text: z.string().min(1) }),
+      authorKind: z.enum(['agent', 'bot', 'user']).default('agent'),
+      isInternalNote: z.boolean().default(false),
+      direction: z.enum(['inbound', 'outbound']).optional(),
+    }).safeParse(request.body)
     if (!body.success) return reply.status(400).send({ error: { code: 'VALIDATION', details: body.error.flatten() } })
-    const msg = await prisma.message.create({ data: { tenantId, conversationId: id, direction: 'outbound', authorId: userId, ...body.data } })
+
+    const direction = body.data.direction ?? (body.data.authorKind === 'user' ? 'inbound' : 'outbound')
+    const msg = await prisma.message.create({
+      data: { tenantId, conversationId: id, direction, authorId: userId, authorKind: body.data.authorKind, content: body.data.content },
+    })
     await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } })
+
+    // Trigger bot engine for inbound user messages
+    if (direction === 'inbound' && body.data.authorKind === 'user') {
+      // Fire-and-forget: don't await — respond immediately, bot replies come via WS
+      setImmediate(() => processInboundMessage(app, id, tenantId, body.data.content.text).catch(() => {}))
+    }
+
     return reply.status(201).send({ data: msg })
   })
 

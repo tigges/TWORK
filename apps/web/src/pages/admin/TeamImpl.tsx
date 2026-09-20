@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFoo
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useTeamMembers, useInviteMember, useUpdateRole, useRemoveMember } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Team', path: '/admin/team' },
@@ -54,12 +55,27 @@ const MOCK_MEMBERS: Member[] = [
 ]
 
 export function TeamPage() {
-  const [members, setMembers] = useState<Member[]>(MOCK_MEMBERS)
+  const { data: rawMembers = [] } = useTeamMembers()
+  const inviteMember = useInviteMember()
+  const updateRole = useUpdateRole()
+  const removeMember = useRemoveMember()
+
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('agent')
+
+  const members: Member[] = rawMembers.map((m) => ({
+    id: m.id,
+    name: m.displayName ?? m.email ?? 'Unknown',
+    email: m.email ?? '',
+    role: ((m.memberships?.[0]?.role ?? 'AGENT').toLowerCase() as Role),
+    status: (m.agentProfile?.status ?? 'offline') as Member['status'],
+    avatar: undefined,
+    conversations: 0,
+    joinedAt: new Date(Date.now()).toLocaleDateString(),
+  }))
 
   const filtered = members.filter((m) => {
     const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase())
@@ -68,25 +84,16 @@ export function TeamPage() {
   })
 
   function changeRole(id: string, role: Role) {
-    setMembers((prev) => prev.map((m) => m.id === id ? { ...m, role } : m))
+    updateRole.mutate({ id, role: role.toUpperCase() })
   }
 
-  function removeMember(id: string) {
-    setMembers((prev) => prev.filter((m) => m.id !== id))
+  function handleRemove(id: string) {
+    removeMember.mutate(id)
   }
 
   function sendInvite() {
     if (!inviteEmail.trim()) return
-    const newMember: Member = {
-      id: String(Date.now()),
-      name: inviteEmail.split('@')[0] ?? inviteEmail,
-      email: inviteEmail,
-      role: inviteRole,
-      status: 'invited',
-      conversations: 0,
-      joinedAt: '—',
-    }
-    setMembers((prev) => [...prev, newMember])
+    inviteMember.mutate({ email: inviteEmail, role: inviteRole.toUpperCase() })
     setInviteEmail('')
     setShowInvite(false)
   }
@@ -206,7 +213,7 @@ export function TeamPage() {
                         <DropdownMenuItem><UserCog size={13} /> Edit profile</DropdownMenuItem>
                         <DropdownMenuItem><Mail size={13} /> Resend invite</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem destructive onClick={() => removeMember(m.id)}><UserMinus size={13} /> Remove from workspace</DropdownMenuItem>
+                        <DropdownMenuItem destructive onClick={() => handleRemove(m.id)}><UserMinus size={13} /> Remove from workspace</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>

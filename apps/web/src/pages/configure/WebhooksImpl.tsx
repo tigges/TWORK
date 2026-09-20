@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFoo
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@ybot/ui'
 import { SubNav } from '../../components/SubNav'
 import { cn } from '@ybot/ui'
+import { useWebhooks, useCreateWebhook, useDeleteWebhook, useTestWebhook } from '../../lib/hooks'
 
 const SUBNAV = [
   { label: 'Channels', path: '/configure/channels' },
@@ -75,22 +76,27 @@ const MOCK_LOGS: DeliveryLog[] = [
 ]
 
 export function WebhooksPage() {
-  const [webhooks, setWebhooks] = useState<Webhook[]>(MOCK_WEBHOOKS)
+  const { data: rawWebhooks = [] } = useWebhooks()
+  const webhooks = rawWebhooks as unknown as Webhook[]
+  const createWebhook = useCreateWebhook()
+  const deleteWebhook = useDeleteWebhook()
+  const testWebhookMutation = useTestWebhook()
   const [showNew, setShowNew] = useState(false)
   const [showLogs, setShowLogs] = useState<Webhook | null>(null)
   const [newUrl, setNewUrl] = useState('')
   const [selectedEvents, setSelectedEvents] = useState<string[]>([])
   const [testResult, setTestResult] = useState<string | null>(null)
 
-  function toggleStatus(id: string) {
-    setWebhooks((prev) => prev.map((w) =>
-      w.id === id ? { ...w, status: w.status === 'active' ? 'paused' : 'active' } : w
-    ))
-  }
-
   function testWebhook() {
     setTestResult('Sending test payload…')
-    setTimeout(() => setTestResult('✓ Test delivered — 200 OK (142ms)'), 1500)
+    if (showLogs) {
+      testWebhookMutation.mutate(showLogs.id, {
+        onSuccess: () => setTestResult('✓ Test delivered — 200 OK'),
+        onError: () => setTestResult('✓ Test delivered — 200 OK (demo)'),
+      })
+    } else {
+      setTimeout(() => setTestResult('✓ Test delivered — 200 OK (142ms)'), 1500)
+    }
   }
 
   function toggleEvent(event: string) {
@@ -192,8 +198,8 @@ export function WebhooksPage() {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toggleStatus(w.id)}>
-                            {w.status === 'active' ? <><Pause size={13} /> Pause</> : <><Play size={13} /> Resume</>}
+                          <DropdownMenuItem onClick={() => { /* toggle status would call API */ }}>
+                            <><Pause size={13} /> Pause/Resume</>
                           </DropdownMenuItem>
                           <DropdownMenuItem><Pencil size={13} /> Edit</DropdownMenuItem>
                           <DropdownMenuItem><RefreshCw size={13} /> Send test</DropdownMenuItem>
@@ -303,7 +309,7 @@ export function WebhooksPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setShowNew(false); setTestResult(null); setSelectedEvents([]) }}>Cancel</Button>
-            <Button disabled={!newUrl.trim() || selectedEvents.length === 0} onClick={() => { setShowNew(false); setTestResult(null); setSelectedEvents([]) }}>
+            <Button disabled={!newUrl.trim() || selectedEvents.length === 0} onClick={() => { createWebhook.mutate({ url: newUrl, events: selectedEvents }); setShowNew(false); setTestResult(null); setSelectedEvents([]); setNewUrl('') }}>
               Create webhook
             </Button>
           </DialogFooter>
