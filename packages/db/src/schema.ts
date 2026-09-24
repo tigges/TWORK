@@ -144,7 +144,7 @@ export const documentRevisions = pgTable('document_revisions', {
   index('doc_revisions_doc_idx').on(t.documentId, t.createdAt),
 ]))
 
-// ─── Post (mail) ──────────────────────────────────────────────────────────────
+// ─── Mail ─────────────────────────────────────────────────────────────────────
 
 export const mailThreads = pgTable('mail_threads', {
   ...base,
@@ -165,16 +165,35 @@ export const mailMessages = pgTable('mail_messages', {
   fromAddress:  text('from_address'),
   toAddresses:  text('to_addresses').array(),
   ccAddresses:  text('cc_addresses').array(),
+  bccAddresses: text('bcc_addresses').array(),
   receivedAt:   timestamp('received_at', { withTimezone: true }).notNull(),
   direction:    text('direction').notNull(),  // 'inbound' | 'outbound'
   flags:        text('flags').array().notNull().default([]),
   labels:       text('labels').array().notNull().default([]),
+  textBody:     text('text_body'),
+  inReplyTo:    text('in_reply_to'),
+  // Null until the raw blob has been parsed. The blob is always written first.
+  parsedAt:     timestamp('parsed_at', { withTimezone: true }),
 }, t => ([
   index('mail_messages_msgid_idx').on(t.messageIdHdr),
   index('mail_messages_thread_idx').on(t.threadId),
 ]))
 
-// ─── Schedule (calendar) ──────────────────────────────────────────────────────
+// ─── Contacts (address book) ──────────────────────────────────────────────────
+
+export const contacts = pgTable('contacts', {
+  ...base,
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  userId:    uuid('user_id').notNull().references(() => users.id),
+  name:      text('name').notNull(),
+  email:     text('email').notNull(),
+  phone:     text('phone'),
+  notes:     text('notes'),
+}, t => ([
+  index('contacts_owner_idx').on(t.projectId, t.userId),
+]))
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable('calendar_events', {
   ...base,

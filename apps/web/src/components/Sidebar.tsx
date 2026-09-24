@@ -6,6 +6,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Users,
   Moon,
   Search,
   Sun,
@@ -20,10 +21,11 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: '/post',     icon: <Mail size={20} />,          label: 'Post'     },
+  { to: '/mail',     icon: <Mail size={20} />,          label: 'Mail'     },
+  { to: '/contacts', icon: <Users size={20} />,          label: 'Contacts' },
   { to: '/files',    icon: <Folder size={20} />,         label: 'Files'    },
   { to: '/pages',    icon: <FileText size={20} />,       label: 'Pages'    },
-  { to: '/schedule', icon: <Calendar size={20} />,       label: 'Schedule' },
+  { to: '/calendar', icon: <Calendar size={20} />,       label: 'Calendar' },
   { to: '/rooms',    icon: <MessageSquare size={20} />,  label: 'Rooms'    },
 ]
 

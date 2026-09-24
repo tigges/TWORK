@@ -1,12 +1,16 @@
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
+import fastifyStatic from '@fastify/static'
 import ws from '@fastify/websocket'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import Fastify from 'fastify'
 import { createDb, runMigrations } from '@twork/db'
 import { StorageClient } from '@twork/storage'
 import { authRoutes } from './auth.js'
 import { createContext } from './context.js'
+import { mailInboundRoutes } from './mail-inbound.js'
 import { appRouter } from './router.js'
 
 export type { AppRouter } from './router.js'
@@ -45,6 +49,7 @@ async function main() {
   await app.register(ws)
 
   authRoutes(app, db, { rpId: RP_ID, rpName: RP_NAME, origin: ORIGIN })
+  await mailInboundRoutes(app, db, storage)
 
   await app.register(fastifyTRPCPlugin, {
     prefix:      '/trpc',
@@ -55,6 +60,17 @@ async function main() {
         createContext(opts, db, storage),
     },
   })
+
+  const webRoot = join(process.cwd(), 'apps/web/dist')
+  if (existsSync(join(webRoot, 'index.html'))) {
+    await app.register(fastifyStatic, { root: webRoot })
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        return reply.sendFile('index.html')
+      }
+      return reply.status(404).send({ error: 'not found' })
+    })
+  }
 
   await app.listen({ port: PORT, host: HOST })
   console.log(`[server] listening on ${HOST}:${PORT}`)

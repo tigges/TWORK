@@ -1,9 +1,9 @@
 # ─── Stage 1: deps ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS deps
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.3 --activate
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* .npmrc ./
 COPY packages/db/package.json       packages/db/
 COPY packages/storage/package.json  packages/storage/
 COPY apps/server/package.json       apps/server/
@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 
 # ─── Stage 2: builder ─────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.3 --activate
 WORKDIR /app
 
 COPY --from=deps /app/node_modules                    ./node_modules
@@ -43,12 +43,16 @@ RUN addgroup --system --gid 1001 twork \
  && adduser  --system --uid 1001 twork
 
 # Copy only production artefacts
-COPY --from=builder --chown=twork:twork /app/packages/db/dist       ./packages/db/dist
-COPY --from=builder --chown=twork:twork /app/packages/db/migrations  ./packages/db/migrations
-COPY --from=builder --chown=twork:twork /app/packages/storage/dist   ./packages/storage/dist
-COPY --from=builder --chown=twork:twork /app/apps/server/dist        ./apps/server/dist
-COPY --from=builder --chown=twork:twork /app/apps/web/dist           ./apps/web/dist
-COPY --from=builder --chown=twork:twork /app/apps/worker/dist        ./apps/worker/dist
+COPY --from=builder --chown=twork:twork /app/packages/db/package.json      ./packages/db/package.json
+COPY --from=builder --chown=twork:twork /app/packages/db/dist              ./packages/db/dist
+COPY --from=builder --chown=twork:twork /app/packages/db/migrations        ./packages/db/migrations
+COPY --from=builder --chown=twork:twork /app/packages/storage/package.json ./packages/storage/package.json
+COPY --from=builder --chown=twork:twork /app/packages/storage/dist         ./packages/storage/dist
+COPY --from=builder --chown=twork:twork /app/apps/server/package.json      ./apps/server/package.json
+COPY --from=builder --chown=twork:twork /app/apps/server/dist              ./apps/server/dist
+COPY --from=builder --chown=twork:twork /app/apps/web/dist                 ./apps/web/dist
+COPY --from=builder --chown=twork:twork /app/apps/worker/package.json      ./apps/worker/package.json
+COPY --from=builder --chown=twork:twork /app/apps/worker/dist              ./apps/worker/dist
 
 # Copy node_modules (production deps only)
 COPY --from=deps --chown=twork:twork /app/node_modules              ./node_modules
