@@ -40,7 +40,7 @@ export function buildRfc5322(input: {
 }
 
 export function outboundConfigured(): boolean {
-  return Boolean(process.env['RESEND_API_KEY'] || process.env['MAILGUN_API_KEY'])
+  return Boolean(process.env['RESEND_API_KEY'])
 }
 
 export async function deliverMail(input: {
@@ -52,8 +52,8 @@ export async function deliverMail(input: {
   subject:     string
   text:        string
 }): Promise<void> {
-  if (process.env['RESEND_API_KEY']) return deliverResend(input)
-  return deliverMailgun(input)
+  if (!process.env['RESEND_API_KEY']) throw new Error('RESEND_API_KEY is not set')
+  return deliverResend(input)
 }
 
 async function deliverResend(input: {
@@ -84,44 +84,6 @@ async function deliverResend(input: {
       subject: input.subject,
       text:    input.text,
     }),
-  })
-  if (!res.ok) {
-    const detail = await res.text()
-    throw new Error(`mail provider rejected the message (${res.status}): ${detail.slice(0, 300)}`)
-  }
-}
-
-async function deliverMailgun(input: {
-  fromName:    string
-  fromAddress: string
-  to:          string
-  cc:          string[]
-  bcc:         string[]
-  subject:     string
-  text:        string
-}): Promise<void> {
-  const key = process.env['MAILGUN_API_KEY']
-  if (!key) throw new Error('RESEND_API_KEY is not set')
-  const domain = process.env['MAILGUN_DOMAIN'] ?? mailDomain()
-  const base   = process.env['MAILGUN_API_BASE'] ?? 'https://api.mailgun.net'
-  const from = input.fromName
-    ? `${safeHeader(input.fromName)} <${safeHeader(input.fromAddress)}>`
-    : safeHeader(input.fromAddress)
-  const body = new URLSearchParams({
-    from,
-    to:      input.to,
-    subject: input.subject,
-    text:    input.text,
-  })
-  if (input.cc.length > 0) body.set('cc', input.cc.join(', '))
-  if (input.bcc.length > 0) body.set('bcc', input.bcc.join(', '))
-  const res = await fetch(`${base}/v3/${domain}/messages`, {
-    method:  'POST',
-    headers: {
-      Authorization:  `Basic ${Buffer.from(`api:${key}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
   })
   if (!res.ok) {
     const detail = await res.text()
