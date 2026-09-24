@@ -8,6 +8,7 @@ export interface ParsedMessage {
   from:      string | null
   to:        string[]
   cc:        string[]
+  bcc:       string[]
   date:      string | null
   text:      string | null
 }
@@ -23,6 +24,7 @@ export async function parseRfc5322(raw: Buffer): Promise<ParsedMessage> {
     from:      firstAddress(email.from),
     to:        addressList(email.to),
     cc:        addressList(email.cc),
+    bcc:       addressList(email.bcc),
     date:      email.date ?? null,
     text:      text.length > 0 ? text : null,
   }

@@ -165,6 +165,7 @@ export const mailMessages = pgTable('mail_messages', {
   fromAddress:  text('from_address'),
   toAddresses:  text('to_addresses').array(),
   ccAddresses:  text('cc_addresses').array(),
+  bccAddresses: text('bcc_addresses').array(),
   receivedAt:   timestamp('received_at', { withTimezone: true }).notNull(),
   direction:    text('direction').notNull(),  // 'inbound' | 'outbound'
   flags:        text('flags').array().notNull().default([]),

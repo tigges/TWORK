@@ -65,6 +65,7 @@ export async function applyParsedMail(db: DB, messageId: string, raw: Buffer): P
     fromAddress:  parsed.from,
     toAddresses:  parsed.to,
     ccAddresses:  parsed.cc,
+    bccAddresses: parsed.bcc,
     textBody:     parsed.text,
     inReplyTo:    parsed.inReplyTo,
     receivedAt,
@@ -72,7 +73,7 @@ export async function applyParsedMail(db: DB, messageId: string, raw: Buffer): P
     updatedAt:    new Date(),
   }).where(eq(mailMessages.id, messageId))
 
-  const plainText = [parsed.subject, parsed.from, ...parsed.to, parsed.text]
+  const plainText = [parsed.subject, parsed.from, ...parsed.to, ...parsed.cc, ...parsed.bcc, parsed.text]
     .filter((part): part is string => !!part && part.length > 0)
     .join('\n') || '(empty)'
 
