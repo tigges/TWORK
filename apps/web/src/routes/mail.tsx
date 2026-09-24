@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import { Mail, PenLine, UserPlus, X } from 'lucide-react'
 import { trpc } from '../trpc.js'
@@ -196,6 +196,7 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
           {' · '}
           {new Date(row.receivedAt).toLocaleString()}
         </p>
+        <CopyDisclosure cc={row.ccAddresses} bcc={row.bccAddresses} />
         <LabelEditor id={row.id} labels={row.labels} />
       </header>
       <div className="flex-1 overflow-auto px-8 py-6">
@@ -222,9 +223,14 @@ function Compose({
   const send = trpc.mail.send.useMutation()
   const contacts = trpc.contacts.list.useQuery({})
   const [to, setTo] = useState(replyToId ? '' : initialTo)
+  const [cc, setCc] = useState('')
+  const [bcc, setBcc] = useState('')
+  const [ccOpen, setCcOpen] = useState(false)
+  const [bccOpen, setBccOpen] = useState(false)
   const [toOpen, setToOpen] = useState(false)
   const [subject, setSubject] = useState('')
   const [text, setText] = useState('')
+  const [formError, setFormError] = useState('')
   const [ready, setReady] = useState(!replyToId)
 
   useEffect(() => {
@@ -238,8 +244,23 @@ function Compose({
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
+    const ccList = splitAddresses(cc)
+    const bccList = splitAddresses(bcc)
+    const invalid = (label: string, list: string[]) => list.some(addr => !isEmail(addr))
+      ? `${label} has an address that is not an email.`
+      : list.length > 20
+        ? `${label} can have at most 20 addresses.`
+        : ''
+    const problem = invalid('Cc', ccList) || invalid('Bcc', bccList)
+    if (problem) {
+      setFormError(problem)
+      return
+    }
+    setFormError('')
     await send.mutateAsync({
       to,
+      cc: ccList,
+      bcc: bccList,
       subject,
       text,
       ...(reply.data?.messageIdHdr ? { inReplyTo: reply.data.messageIdHdr } : {}),
@@ -259,7 +280,7 @@ function Compose({
             <X size={16} />
           </button>
         </div>
-        <label className="relative flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
+        <div className="relative flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
           <span className="w-14 text-zinc-400">To</span>
           <input
             value={to}
@@ -270,8 +291,38 @@ function Compose({
             type="email"
             className="min-w-0 flex-1 bg-transparent outline-none"
           />
+          <span className="flex shrink-0 gap-2">
+            {!ccOpen && (
+              <button type="button" onClick={() => setCcOpen(true)} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+                {cc.trim() ? `Cc: ${shorten(cc)}` : 'Cc'}
+              </button>
+            )}
+            {!bccOpen && (
+              <button type="button" onClick={() => setBccOpen(true)} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+                {bcc.trim() ? `Bcc: ${shorten(bcc)}` : 'Bcc'}
+              </button>
+            )}
+          </span>
           {toOpen && <ContactMatches query={to} contacts={contacts.data ?? []} onPick={email => { setTo(email); setToOpen(false) }} />}
-        </label>
+        </div>
+        {ccOpen && (
+          <CopyField
+            label="Cc"
+            value={cc}
+            contacts={contacts.data ?? []}
+            onChange={setCc}
+            onCollapse={() => setCcOpen(false)}
+          />
+        )}
+        {bccOpen && (
+          <CopyField
+            label="Bcc"
+            value={bcc}
+            contacts={contacts.data ?? []}
+            onChange={setBcc}
+            onCollapse={() => setBccOpen(false)}
+          />
+        )}
         <label className="flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
           <span className="w-14 text-zinc-400">Subject</span>
           <input value={subject} onChange={e => setSubject(e.target.value)} required className="min-w-0 flex-1 bg-transparent outline-none" />
@@ -283,7 +334,9 @@ function Compose({
           rows={10}
           className="resize-none bg-transparent px-4 py-3 text-sm outline-none"
         />
-        {send.error && <p className="px-4 pb-2 text-xs text-red-600">{send.error.message}</p>}
+        {(formError || send.error) && (
+          <p className="px-4 pb-2 text-xs text-red-600">{formError || send.error?.message}</p>
+        )}
         <div className="flex justify-end px-4 py-3">
           <button
             type="submit"
@@ -295,6 +348,72 @@ function Compose({
         </div>
       </form>
     </div>
+  )
+}
+
+function CopyField({
+  label,
+  value,
+  contacts,
+  onChange,
+  onCollapse,
+}: {
+  label: string
+  value: string
+  contacts: { id: string; name: string; email: string }[]
+  onChange: (value: string) => void
+  onCollapse: () => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => { input.current?.focus() }, [])
+  const query = lastAddressToken(value)
+  return (
+    <div className="relative flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
+      <button
+        type="button"
+        onClick={onCollapse}
+        className="w-14 text-left text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+      >
+        {label}
+      </button>
+      <input
+        ref={input}
+        value={value}
+        onChange={event => { onChange(event.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Separate addresses with commas"
+        aria-label={label}
+        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
+      />
+      {open && (
+        <ContactMatches
+          query={query}
+          contacts={contacts}
+          onPick={email => { onChange(pickAddress(value, email)); setOpen(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CopyDisclosure({ cc, bcc }: { cc: string[] | null; bcc: string[] | null }) {
+  const ccList = cc ?? []
+  const bccList = bcc ?? []
+  if (ccList.length === 0 && bccList.length === 0) return null
+  const parts = [
+    ccList.length > 0 ? `Cc ${ccList.length}` : '',
+    bccList.length > 0 ? `Bcc ${bccList.length}` : '',
+  ].filter(Boolean)
+  return (
+    <details className="mt-1 text-xs text-zinc-500">
+      <summary className="cursor-pointer select-none hover:text-zinc-800 dark:hover:text-zinc-200">
+        {parts.join(' · ')}
+      </summary>
+      {ccList.length > 0 && <p className="mt-1">Cc {ccList.join(', ')}</p>}
+      {bccList.length > 0 && <p className={ccList.length > 0 ? '' : 'mt-1'}>Bcc {bccList.join(', ')}</p>}
+    </details>
   )
 }
 
@@ -469,4 +588,30 @@ function formatWhen(value: Date | string): string {
 function extractEmail(value: string): string {
   const match = value.match(/<([^>]+)>/)
   return (match?.[1] ?? value).trim()
+}
+
+function splitAddresses(value: string): string[] {
+  return value.split(/[,;]/).map(part => part.trim()).filter(Boolean)
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function lastAddressToken(value: string): string {
+  const parts = value.split(/[,;]/)
+  return (parts[parts.length - 1] ?? '').trim()
+}
+
+function pickAddress(current: string, email: string): string {
+  const parts = splitAddresses(current)
+  const typed = lastAddressToken(current)
+  if (parts.length > 0 && typed && !isEmail(typed)) parts.pop()
+  if (!parts.some(part => part.toLowerCase() === email.toLowerCase())) parts.push(email)
+  return parts.join(', ')
+}
+
+function shorten(value: string): string {
+  const text = value.trim()
+  return text.length > 28 ? `${text.slice(0, 25)}…` : text
 }

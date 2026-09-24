@@ -54,6 +54,27 @@ const pagesRouter = router({
 
 // ── Mail ──────────────────────────────────────────────────────────────────────
 
+const MAX_COPIES = 20
+
+function addressListInput(label: string) {
+  return z.array(z.string()).max(MAX_COPIES, `${label} can have at most ${MAX_COPIES} addresses.`).default([]).transform((values, ctx) => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const raw of values) {
+      const addr = raw.trim().toLowerCase()
+      if (!addr) continue
+      if (!z.string().email().safeParse(addr).success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label} has an address that is not an email.` })
+        return z.NEVER
+      }
+      if (seen.has(addr)) continue
+      seen.add(addr)
+      out.push(addr)
+    }
+    return out
+  })
+}
+
 const mailRouter = router({
   address: authed.query(({ ctx }) => ({
     address: mailboxAddress(ctx.user.email),
@@ -125,6 +146,7 @@ const mailRouter = router({
         fromAddress:  row.fromAddress,
         toAddresses:  row.toAddresses,
         ccAddresses:  row.ccAddresses,
+        bccAddresses: row.bccAddresses,
         receivedAt:   row.receivedAt,
         direction:    row.direction,
         flags:        row.flags,
@@ -201,6 +223,8 @@ const mailRouter = router({
   send: authed
     .input(z.object({
       to:         z.string().email(),
+      cc:         addressListInput('Cc'),
+      bcc:        addressListInput('Bcc'),
       subject:    z.string().min(1).max(998),
       text:       z.string().min(1).max(200_000),
       inReplyTo:  z.string().min(1).optional(),
@@ -217,11 +241,19 @@ const mailRouter = router({
         })
       }
 
+      const to = input.to.trim()
+      const toKey = to.toLowerCase()
+      const cc = input.cc.filter(addr => addr !== toKey)
+      const ccKeys = new Set(cc)
+      const bcc = input.bcc.filter(addr => addr !== toKey && !ccKeys.has(addr))
+
       const fromAddress = mailboxAddress(ctx.user.email)
       const raw = buildRfc5322({
         fromName:    ctx.user.displayName,
         fromAddress,
-        to:          input.to,
+        to,
+        cc,
+        bcc,
         subject:     input.subject,
         text:        input.text,
         ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
@@ -236,7 +268,9 @@ const mailRouter = router({
         await deliverMail({
           fromName:    ctx.user.displayName,
           fromAddress,
-          to:          input.to,
+          to,
+          cc,
+          bcc,
           subject:     input.subject,
           text:        input.text,
         })

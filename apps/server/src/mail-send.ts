@@ -5,6 +5,8 @@ export function buildRfc5322(input: {
   fromName:    string
   fromAddress: string
   to:          string
+  cc:          string[]
+  bcc:         string[]
   subject:     string
   text:        string
   inReplyTo?:  string
@@ -16,13 +18,19 @@ export function buildRfc5322(input: {
   const headers = [
     `From: ${from}`,
     `To: ${safeHeader(input.to)}`,
+  ]
+  if (input.cc.length > 0) headers.push(`Cc: ${headerAddresses(input.cc)}`)
+  // Kept on the sender's copy so the mailbox can show who was blind-copied.
+  // The provider gets Bcc as its own field and does not put it on other recipients' copies.
+  if (input.bcc.length > 0) headers.push(`Bcc: ${headerAddresses(input.bcc)}`)
+  headers.push(
     `Subject: ${encodeHeader(safeHeader(input.subject))}`,
     `Date: ${new Date().toUTCString().replace(/GMT$/, '+0000')}`,
     `Message-ID: <${uuidv7()}@${domain}>`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
     'Content-Transfer-Encoding: 8bit',
-  ]
+  )
   if (input.inReplyTo) {
     const ref = safeHeader(input.inReplyTo)
     headers.push(`In-Reply-To: ${ref}`, `References: ${ref}`)
@@ -39,6 +47,8 @@ export async function deliverMail(input: {
   fromName:    string
   fromAddress: string
   to:          string
+  cc:          string[]
+  bcc:         string[]
   subject:     string
   text:        string
 }): Promise<void> {
@@ -50,6 +60,8 @@ async function deliverResend(input: {
   fromName:    string
   fromAddress: string
   to:          string
+  cc:          string[]
+  bcc:         string[]
   subject:     string
   text:        string
 }): Promise<void> {
@@ -67,6 +79,8 @@ async function deliverResend(input: {
     body: JSON.stringify({
       from,
       to:      [input.to],
+      ...(input.cc.length > 0 ? { cc: input.cc } : {}),
+      ...(input.bcc.length > 0 ? { bcc: input.bcc } : {}),
       subject: input.subject,
       text:    input.text,
     }),
@@ -81,6 +95,8 @@ async function deliverMailgun(input: {
   fromName:    string
   fromAddress: string
   to:          string
+  cc:          string[]
+  bcc:         string[]
   subject:     string
   text:        string
 }): Promise<void> {
@@ -97,6 +113,8 @@ async function deliverMailgun(input: {
     subject: input.subject,
     text:    input.text,
   })
+  if (input.cc.length > 0) body.set('cc', input.cc.join(', '))
+  if (input.bcc.length > 0) body.set('bcc', input.bcc.join(', '))
   const res = await fetch(`${base}/v3/${domain}/messages`, {
     method:  'POST',
     headers: {
@@ -109,6 +127,10 @@ async function deliverMailgun(input: {
     const detail = await res.text()
     throw new Error(`mail provider rejected the message (${res.status}): ${detail.slice(0, 300)}`)
   }
+}
+
+function headerAddresses(values: string[]): string {
+  return values.map(safeHeader).join(', ')
 }
 
 function safeHeader(value: string): string {
