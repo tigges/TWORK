@@ -10,10 +10,10 @@ import type { QueryClient } from '@tanstack/react-query'
 import { RootLayout }   from './routes/__root.js'
 import { LoginPage }    from './routes/auth/login.js'
 import { SetupPage }    from './routes/auth/setup.js'
-import { PostPage }     from './routes/post.js'
+import { MailPage }     from './routes/mail.js'
 import { FilesPage }    from './routes/files.js'
 import { PagesPage }    from './routes/pages.js'
-import { SchedulePage } from './routes/schedule.js'
+import { CalendarPage } from './routes/calendar.js'
 import { RoomsPage }    from './routes/rooms.js'
 
 // ── Router context ────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ const rootRoute = createRootRouteWithContext<RouterCtx>()({ component: RootLayou
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path:           '/',
-  beforeLoad:     ({ context }) => { if (!context.auth.isLoading) throw redirect({ to: '/post' }) },
+  beforeLoad:     ({ context }) => { if (!context.auth.isLoading) throw redirect({ to: '/mail' }) },
   component:      () => null,
 })
 
@@ -55,11 +55,11 @@ const setupRoute = createRoute({
   component:      SetupPage,
 })
 
-const postRoute = createRoute({
+const mailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path:           '/post',
+  path:           '/mail',
   beforeLoad:     ({ context }) => requireAuth(context),
-  component:      PostPage,
+  component:      MailPage,
 })
 
 const filesRoute = createRoute({
@@ -76,11 +76,11 @@ const pagesRoute = createRoute({
   component:      PagesPage,
 })
 
-const scheduleRoute = createRoute({
+const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path:           '/schedule',
+  path:           '/calendar',
   beforeLoad:     ({ context }) => requireAuth(context),
-  component:      SchedulePage,
+  component:      CalendarPage,
 })
 
 const roomsRoute = createRoute({
@@ -96,10 +96,10 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   setupRoute,
-  postRoute,
+  mailRoute,
   filesRoute,
   pagesRoute,
-  scheduleRoute,
+  calendarRoute,
   roomsRoute,
 ])
 

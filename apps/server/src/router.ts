@@ -44,7 +44,7 @@ const pagesRouter = router({
   ),
 })
 
-// ── Post (mail) ───────────────────────────────────────────────────────────────
+// ── Mail ──────────────────────────────────────────────────────────────────────
 
 const postRouter = router({
   threads: authed.query(async ({ ctx }) =>
@@ -55,7 +55,7 @@ const postRouter = router({
   ),
 })
 
-// ── Schedule (calendar) ───────────────────────────────────────────────────────
+// ── Calendar ──────────────────────────────────────────────────────────────────
 
 const scheduleRouter = router({
   events: authed

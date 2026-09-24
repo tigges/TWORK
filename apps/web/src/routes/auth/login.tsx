@@ -16,7 +16,7 @@ export function LoginPage() {
     try {
       await loginWithPasskey()
       await refetch()
-      navigate({ to: '/post' })
+      navigate({ to: '/mail' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
