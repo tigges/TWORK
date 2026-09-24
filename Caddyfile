@@ -1,0 +1,35 @@
+# TWork Caddyfile — edit PUBLIC_DOMAIN in .env, then run: docker compose restart caddy
+# For LAN-only access, replace the domain with your NAS IP and remove the tls line.
+
+{$PUBLIC_DOMAIN:localhost} {
+
+  # TLS: Caddy handles Let's Encrypt automatically when a real domain is set.
+  # For localhost / LAN (self-signed): comment out `tls` and Caddy uses HTTP.
+  # tls internal   # ← uncomment for self-signed cert on LAN
+
+  # WebSocket upgrade for Rooms (tRPC subscriptions)
+  @websocket {
+    header Connection *Upgrade*
+    header Upgrade    websocket
+  }
+  reverse_proxy @websocket app:3001
+
+  # All other traffic
+  reverse_proxy app:3001
+
+  # Security headers
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options    "nosniff"
+    X-Frame-Options           "DENY"
+    Referrer-Policy           "strict-origin-when-cross-origin"
+    -Server
+  }
+
+  encode zstd gzip
+
+  log {
+    output stdout
+    format json
+  }
+}

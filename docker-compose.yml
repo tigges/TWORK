@@ -1,0 +1,123 @@
+version: "3.9"
+
+# TWork — NAS deployment
+# Usage: docker compose up -d
+# First-time setup: docker compose run --rm app node packages/db/dist/seed.js
+
+services:
+
+  # ── Reverse proxy ────────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # ── Application server ───────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    command: ["node", "apps/server/dist/index.js"]
+    env_file: .env
+    environment:
+      NODE_ENV:     production
+      HOST:         0.0.0.0
+      PORT:         "3001"
+      S3_ENDPOINT:  http://minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/auth/me"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+      start_period: 15s
+
+  # ── Background worker ────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    command: ["node", "apps/worker/dist/index.js"]
+    env_file: .env
+    environment:
+      NODE_ENV:    production
+      S3_ENDPOINT: http://minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       twork
+      POSTGRES_USER:     twork
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twork -d twork"]
+      interval: 5s
+      timeout:  5s
+      retries:  10
+
+  # ── MinIO (S3-compatible object storage) ─────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout:  5s
+      retries:  10
+
+  # ── MinIO bucket init (runs once then exits) ──────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
+        mc mb --ignore-existing local/$$S3_BUCKET;
+        echo 'bucket ready';
+      "
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      S3_BUCKET:        ${S3_BUCKET:-twork}
+    restart: "no"
+
+volumes:
+  pg_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
