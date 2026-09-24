@@ -4,6 +4,7 @@ import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
   auditLog,
+  blobs,
   can,
   canBatch,
   channels,
@@ -16,6 +17,8 @@ import {
 } from '@twork/db'
 import { mailboxAddress } from './mailbox.js'
 import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
+import { cleanFileName } from './file-name.js'
+import { siblingNameTaken } from './files-shared.js'
 import { storeRawMessage } from './mail-store.js'
 import { calendarRouter } from './calendar-router.js'
 import { authed, router } from './trpc.js'
@@ -24,22 +27,211 @@ import { authed, router } from './trpc.js'
 
 const filesRouter = router({
   list: authed
-    .input(z.object({ parentId: z.string().nullable().default(null) }))
+    .input(z.object({ parentId: z.string().uuid().nullable().default(null) }))
     .query(async ({ ctx, input }) => {
-      return ctx.db
-        .select()
+      const crumbs = await folderCrumbs(ctx.db, ctx.session.projectId, input.parentId)
+      if (input.parentId && crumbs.at(-1)?.id !== input.parentId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Folder not found.' })
+      }
+      const rows = await ctx.db
+        .select({
+          id:          filesTable.id,
+          name:        filesTable.name,
+          isFolder:    filesTable.isFolder,
+          updatedAt:   filesTable.updatedAt,
+          sizeBytes:   blobs.sizeBytes,
+          contentType: blobs.contentType,
+        })
         .from(filesTable)
-        .where(
-          and(
-            eq(filesTable.projectId, ctx.session.projectId),
-            input.parentId
-              ? eq(filesTable.parentId, input.parentId)
-              : isNull(filesTable.parentId),
-            isNull(filesTable.deletedAt),
-          ),
-        )
+        .leftJoin(blobs, eq(blobs.id, filesTable.blobId))
+        .where(and(
+          eq(filesTable.projectId, ctx.session.projectId),
+          input.parentId ? eq(filesTable.parentId, input.parentId) : isNull(filesTable.parentId),
+          isNull(filesTable.deletedAt),
+        ))
+        .orderBy(desc(filesTable.isFolder), asc(filesTable.name))
+      const access = await canBatch(
+        ctx.session.userId,
+        'read',
+        rows.map(row => ({ type: 'file', id: row.id, projectId: ctx.session.projectId })),
+        ctx.db,
+      )
+      return {
+        crumbs,
+        rows: rows.filter(row => access.get(row.id)),
+      }
+    }),
+
+  mkdir: authed
+    .input(z.object({
+      parentId: z.string().uuid().nullable().default(null),
+      name:     z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertFilesWrite(ctx.session.userId, ctx.session.projectId, ctx.db)
+      const name = cleanFileName(input.name)
+      if (!name) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Use a folder name without slashes, up to 180 characters.' })
+      if (input.parentId) {
+        const crumbs = await folderCrumbs(ctx.db, ctx.session.projectId, input.parentId)
+        if (crumbs.at(-1)?.id !== input.parentId) throw new TRPCError({ code: 'NOT_FOUND', message: 'Folder not found.' })
+      }
+      if (await siblingNameTaken(ctx.db, ctx.session.projectId, input.parentId, name)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'That name is already in this folder.' })
+      }
+      const id = uuidv7()
+      await ctx.db.transaction(async tx => {
+        await tx.insert(filesTable).values({
+          id,
+          projectId: ctx.session.projectId,
+          parentId:  input.parentId,
+          name,
+          isFolder:  true,
+          createdBy: ctx.session.userId,
+        })
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'file.mkdir',
+          objectType: 'file',
+          objectId:   id,
+          after:      { name, parentId: input.parentId },
+        })
+      })
+      return { id }
+    }),
+
+  trash: authed.query(async ({ ctx }) => {
+    const rows = await ctx.db
+      .select({
+        id:        filesTable.id,
+        name:      filesTable.name,
+        isFolder:  filesTable.isFolder,
+        updatedAt: filesTable.updatedAt,
+      })
+      .from(filesTable)
+      .where(and(
+        eq(filesTable.projectId, ctx.session.projectId),
+        sql`${filesTable.deletedAt} IS NOT NULL`,
+      ))
+      .orderBy(desc(filesTable.deletedAt))
+    const access = await canBatch(
+      ctx.session.userId,
+      'read',
+      rows.map(row => ({ type: 'file', id: row.id, projectId: ctx.session.projectId })),
+      ctx.db,
+    )
+    return rows.filter(row => access.get(row.id))
+  }),
+
+  remove: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await liveFile(ctx.db, ctx.session.projectId, input.id)
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+      const allowed = await can(ctx.session.userId, 'delete', {
+        type: 'file', id: row.id, projectId: ctx.session.projectId,
+      }, ctx.db)
+      if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+      const now = new Date()
+      await ctx.db.transaction(async tx => {
+        await tx.update(filesTable).set({ deletedAt: now, updatedAt: now }).where(eq(filesTable.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'file.trash',
+          objectType: 'file',
+          objectId:   row.id,
+          after:      { name: row.name },
+        })
+      })
+      return { ok: true }
+    }),
+
+  restore: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .select({ id: filesTable.id, name: filesTable.name, parentId: filesTable.parentId })
+        .from(filesTable)
+        .where(and(
+          eq(filesTable.id, input.id),
+          eq(filesTable.projectId, ctx.session.projectId),
+          sql`${filesTable.deletedAt} IS NOT NULL`,
+        ))
+        .limit(1)
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+      const allowed = await can(ctx.session.userId, 'write', {
+        type: 'file', id: row.id, projectId: ctx.session.projectId,
+      }, ctx.db)
+      if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+      let parentId = row.parentId
+      if (parentId) {
+        const crumbs = await folderCrumbs(ctx.db, ctx.session.projectId, parentId)
+        if (crumbs.at(-1)?.id !== parentId) parentId = null
+      }
+      if (await siblingNameTaken(ctx.db, ctx.session.projectId, parentId, row.name)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'That name is already in the folder.' })
+      }
+      await ctx.db.transaction(async tx => {
+        await tx.update(filesTable).set({
+          deletedAt: null,
+          parentId,
+          updatedAt: new Date(),
+        }).where(eq(filesTable.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'file.restore',
+          objectType: 'file',
+          objectId:   row.id,
+          after:      { name: row.name, parentId },
+        })
+      })
+      return { ok: true }
     }),
 })
+
+async function assertFilesWrite(userId: string, projectId: string, db: Parameters<typeof can>[3]) {
+  const allowed = await can(userId, 'write', { type: 'project', id: projectId, projectId }, db)
+  if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+}
+
+async function liveFile(db: Parameters<typeof can>[3], projectId: string, id: string) {
+  const [row] = await db
+    .select({ id: filesTable.id, name: filesTable.name })
+    .from(filesTable)
+    .where(and(
+      eq(filesTable.id, id),
+      eq(filesTable.projectId, projectId),
+      isNull(filesTable.deletedAt),
+    ))
+    .limit(1)
+  return row
+}
+
+async function folderCrumbs(db: Parameters<typeof can>[3], projectId: string, folderId: string | null) {
+  const crumbs: { id: string; name: string }[] = []
+  let id = folderId
+  for (let depth = 0; depth < 20 && id; depth++) {
+    const [row] = await db
+      .select({ id: filesTable.id, name: filesTable.name, parentId: filesTable.parentId })
+      .from(filesTable)
+      .where(and(
+        eq(filesTable.id, id),
+        eq(filesTable.projectId, projectId),
+        eq(filesTable.isFolder, true),
+        isNull(filesTable.deletedAt),
+      ))
+      .limit(1)
+    if (!row) break
+    crumbs.unshift({ id: row.id, name: row.name })
+    id = row.parentId
+  }
+  return crumbs
+}
 
 // ── Pages ─────────────────────────────────────────────────────────────────────
 

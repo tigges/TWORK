@@ -1,4 +1,4 @@
-import type { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify'
+import type { FastifyRequest } from 'fastify'
 import type { DB } from '@twork/db'
 import { grants, sessions, users } from '@twork/db'
 import { and, eq, gt, isNull } from 'drizzle-orm'
@@ -24,7 +24,7 @@ export interface Context {
 }
 
 export async function createContext(
-  opts:    CreateFastifyContextOptions,
+  opts:    { req: FastifyRequest },
   db:      DB,
   storage: StorageClient,
 ): Promise<Context> {
