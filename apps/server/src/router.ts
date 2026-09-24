@@ -1,10 +1,9 @@
 import { TRPCError } from '@trpc/server'
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
   auditLog,
-  calendarEvents,
   can,
   canBatch,
   channels,
@@ -18,6 +17,7 @@ import {
 import { mailboxAddress } from './mailbox.js'
 import { buildRfc5322, deliverMail } from './mail-send.js'
 import { storeRawMessage } from './mail-store.js'
+import { calendarRouter } from './calendar-router.js'
 import { authed, router } from './trpc.js'
 
 // ── Files ─────────────────────────────────────────────────────────────────────
@@ -209,26 +209,6 @@ function snippet(text: string | null): string {
   return line.length > 120 ? `${line.slice(0, 117)}…` : line
 }
 
-// ── Calendar ──────────────────────────────────────────────────────────────────
-
-const scheduleRouter = router({
-  events: authed
-    .input(z.object({ from: z.string(), to: z.string() }))
-    .query(async ({ ctx, input }) =>
-      ctx.db
-        .select()
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.projectId, ctx.session.projectId),
-            isNull(calendarEvents.deletedAt),
-            gte(calendarEvents.startUtc, new Date(input.from)),
-            lte(calendarEvents.endUtc,   new Date(input.to)),
-          ),
-        ),
-    ),
-})
-
 // ── Rooms (chat) ──────────────────────────────────────────────────────────────
 
 const roomsRouter = router({
@@ -338,6 +318,19 @@ const contactsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const row = await loadContact(ctx, input.id)
       const email = input.email.toLowerCase()
+      const [existing] = await ctx.db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(
+          eq(contacts.projectId, ctx.session.projectId),
+          eq(contacts.userId, ctx.session.userId),
+          sql`lower(${contacts.email}) = ${email}`,
+          isNull(contacts.deletedAt),
+          ne(contacts.id, row.id),
+        ))
+        .limit(1)
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'That email is already in Contacts.' })
+
       await ctx.db.transaction(async tx => {
         await tx.update(contacts).set({
           name:      input.name,
@@ -438,7 +431,7 @@ export const appRouter = router({
   pages:    pagesRouter,
   mail:     mailRouter,
   contacts: contactsRouter,
-  schedule: scheduleRouter,
+  calendar: calendarRouter,
   rooms:    roomsRouter,
   search:   searchRouter,
 })

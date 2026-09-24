@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Trash2, UserPlus, Users } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Mail, Trash2, UserPlus, Users } from 'lucide-react'
 import { trpc } from '../trpc.js'
 
 type Contact = {
@@ -169,14 +170,24 @@ function ContactForm({
       {error && <p className="mt-3 text-xs text-red-600">{error.message}</p>}
       <div className="mt-6 flex items-center justify-between">
         {contact && onDeleted ? (
-          <button
-            type="button"
-            onClick={async () => { await remove.mutateAsync({ id: contact.id }); await onDeleted() }}
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-600"
-          >
-            <Trash2 size={14} />
-            Delete
-          </button>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/mail"
+              search={{ to: contact.email }}
+              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-indigo-600"
+            >
+              <Mail size={14} />
+              Write
+            </Link>
+            <button
+              type="button"
+              onClick={async () => { await remove.mutateAsync({ id: contact.id }); await onDeleted() }}
+              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-600"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
         ) : <span />}
         <div className="flex gap-2">
           {onCancel && (

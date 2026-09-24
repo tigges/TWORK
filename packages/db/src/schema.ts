@@ -192,7 +192,7 @@ export const contacts = pgTable('contacts', {
   index('contacts_owner_idx').on(t.projectId, t.userId),
 ]))
 
-// ─── Schedule (calendar) ──────────────────────────────────────────────────────
+// ─── Calendar ─────────────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable('calendar_events', {
   ...base,

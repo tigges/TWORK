@@ -1,14 +1,22 @@
 import { useEffect, useState } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import { Mail, PenLine, X } from 'lucide-react'
 import { trpc } from '../trpc.js'
 
 export function MailPage() {
   const utils = trpc.useUtils()
+  const search = useSearch({ from: '/mail' })
   const address = trpc.mail.address.useQuery()
   const list = trpc.mail.list.useQuery()
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [composing, setComposing] = useState(false)
+  const [composing, setComposing] = useState(!!search.to)
   const [replyTo, setReplyTo] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!search.to) return
+    setReplyTo(null)
+    setComposing(true)
+  }, [search.to])
 
   const selected = list.data?.find(row => row.id === selectedId) ?? list.data?.[0] ?? null
   const activeId = selected?.id ?? null
@@ -85,6 +93,8 @@ export function MailPage() {
 
       {composing && (
         <Compose
+          key={`${replyTo ?? ''}:${search.to ?? ''}`}
+          initialTo={search.to ?? ''}
           replyToId={replyTo}
           onClose={() => setComposing(false)}
           onSent={async () => {
@@ -142,10 +152,12 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
 }
 
 function Compose({
+  initialTo,
   replyToId,
   onClose,
   onSent,
 }: {
+  initialTo: string
   replyToId: string | null
   onClose: () => void
   onSent: () => Promise<void>
@@ -155,7 +167,7 @@ function Compose({
   })
   const send = trpc.mail.send.useMutation()
   const contacts = trpc.contacts.list.useQuery({})
-  const [to, setTo] = useState('')
+  const [to, setTo] = useState(replyToId ? '' : initialTo)
   const [toOpen, setToOpen] = useState(false)
   const [subject, setSubject] = useState('')
   const [text, setText] = useState('')

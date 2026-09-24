@@ -60,7 +60,14 @@ const mailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path:           '/mail',
   beforeLoad:     ({ context }) => requireAuth(context),
-  component:      MailPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const raw = search['to']
+    if (typeof raw !== 'string') return {}
+    const to = raw.trim()
+    if (!to.includes('@') || to.length > 320) return {}
+    return { to }
+  },
+  component: MailPage,
 })
 
 const contactsRoute = createRoute({
