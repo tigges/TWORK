@@ -11,6 +11,7 @@ import { RootLayout }   from './routes/__root.js'
 import { LoginPage }    from './routes/auth/login.js'
 import { SetupPage }    from './routes/auth/setup.js'
 import { MailPage }     from './routes/mail.js'
+import { ContactsPage } from './routes/contacts.js'
 import { FilesPage }    from './routes/files.js'
 import { PagesPage }    from './routes/pages.js'
 import { CalendarPage } from './routes/calendar.js'
@@ -62,6 +63,13 @@ const mailRoute = createRoute({
   component:      MailPage,
 })
 
+const contactsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path:           '/contacts',
+  beforeLoad:     ({ context }) => requireAuth(context),
+  component:      ContactsPage,
+})
+
 const filesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path:           '/files',
@@ -97,6 +105,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
   mailRoute,
+  contactsRoute,
   filesRoute,
   pagesRoute,
   calendarRoute,

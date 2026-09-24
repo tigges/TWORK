@@ -154,7 +154,9 @@ function Compose({
     enabled: !!replyToId,
   })
   const send = trpc.mail.send.useMutation()
+  const contacts = trpc.contacts.list.useQuery({})
   const [to, setTo] = useState('')
+  const [toOpen, setToOpen] = useState(false)
   const [subject, setSubject] = useState('')
   const [text, setText] = useState('')
   const [ready, setReady] = useState(!replyToId)
@@ -191,9 +193,18 @@ function Compose({
             <X size={16} />
           </button>
         </div>
-        <label className="flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
+        <label className="relative flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
           <span className="w-14 text-zinc-400">To</span>
-          <input value={to} onChange={e => setTo(e.target.value)} required type="email" className="min-w-0 flex-1 bg-transparent outline-none" />
+          <input
+            value={to}
+            onChange={e => { setTo(e.target.value); setToOpen(true) }}
+            onFocus={() => setToOpen(true)}
+            onBlur={() => setTimeout(() => setToOpen(false), 150)}
+            required
+            type="email"
+            className="min-w-0 flex-1 bg-transparent outline-none"
+          />
+          {toOpen && <ContactMatches query={to} contacts={contacts.data ?? []} onPick={email => { setTo(email); setToOpen(false) }} />}
         </label>
         <label className="flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-sm dark:border-zinc-800">
           <span className="w-14 text-zinc-400">Subject</span>
@@ -218,6 +229,38 @@ function Compose({
         </div>
       </form>
     </div>
+  )
+}
+
+function ContactMatches({
+  query,
+  contacts,
+  onPick,
+}: {
+  query:    string
+  contacts: { id: string; name: string; email: string }[]
+  onPick:   (email: string) => void
+}) {
+  const q = query.trim().toLowerCase()
+  const matches = contacts.filter(row =>
+    q.length === 0 || row.name.toLowerCase().includes(q) || row.email.toLowerCase().includes(q),
+  ).slice(0, 6)
+  if (matches.length === 0) return null
+  return (
+    <ul className="absolute left-16 right-2 top-full z-10 mt-1 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+      {matches.map(row => (
+        <li key={row.id}>
+          <button
+            type="button"
+            onMouseDown={event => { event.preventDefault(); onPick(row.email) }}
+            className="block w-full px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+          >
+            <span className="block text-sm">{row.name}</span>
+            <span className="block text-xs text-zinc-500">{row.email}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

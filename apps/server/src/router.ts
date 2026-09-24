@@ -1,12 +1,15 @@
 import { TRPCError } from '@trpc/server'
-import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm'
+import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
+  auditLog,
   calendarEvents,
   can,
   canBatch,
   channels,
   channelMembers,
+  contacts,
   documents,
   files as filesTable,
   mailMessages,
@@ -245,6 +248,168 @@ const roomsRouter = router({
   ),
 })
 
+// ── Contacts ──────────────────────────────────────────────────────────────────
+
+const contactInput = z.object({
+  name:  z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(320),
+  phone: z.string().trim().max(40).optional(),
+  notes: z.string().trim().max(4000).optional(),
+})
+
+const contactsRouter = router({
+  list: authed
+    .input(z.object({ q: z.string().max(200).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const q = input?.q?.trim().toLowerCase() ?? ''
+      const needle = `%${q.replace(/[%_]/g, '')}%`
+      const rows = await ctx.db
+        .select()
+        .from(contacts)
+        .where(and(
+          eq(contacts.projectId, ctx.session.projectId),
+          eq(contacts.userId, ctx.session.userId),
+          isNull(contacts.deletedAt),
+          q
+            ? sql`(lower(${contacts.name}) like ${needle} OR lower(${contacts.email}) like ${needle})`
+            : undefined,
+        ))
+        .orderBy(asc(contacts.name))
+        .limit(500)
+
+      const access = await canBatch(
+        ctx.session.userId,
+        'read',
+        rows.map(row => ({ type: 'contact', id: row.id, projectId: ctx.session.projectId })),
+        ctx.db,
+      )
+      return rows.filter(row => access.get(row.id)).map(row => ({
+        id:    row.id,
+        name:  row.name,
+        email: row.email,
+        phone: row.phone,
+        notes: row.notes,
+      }))
+    }),
+
+  create: authed
+    .input(contactInput)
+    .mutation(async ({ ctx, input }) => {
+      await assertProjectWrite(ctx)
+      const email = input.email.toLowerCase()
+      const [existing] = await ctx.db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(
+          eq(contacts.projectId, ctx.session.projectId),
+          eq(contacts.userId, ctx.session.userId),
+          sql`lower(${contacts.email}) = ${email}`,
+          isNull(contacts.deletedAt),
+        ))
+        .limit(1)
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'That email is already in Contacts.' })
+
+      const id = uuidv7()
+      await ctx.db.transaction(async tx => {
+        await tx.insert(contacts).values({
+          id,
+          projectId: ctx.session.projectId,
+          userId:    ctx.session.userId,
+          name:      input.name,
+          email,
+          phone:     input.phone || null,
+          notes:     input.notes || null,
+        })
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'contact.create',
+          objectType: 'contact',
+          objectId:   id,
+          after:      { name: input.name, email },
+        })
+      })
+      return { id }
+    }),
+
+  update: authed
+    .input(contactInput.extend({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await loadContact(ctx, input.id)
+      const email = input.email.toLowerCase()
+      await ctx.db.transaction(async tx => {
+        await tx.update(contacts).set({
+          name:      input.name,
+          email,
+          phone:     input.phone || null,
+          notes:     input.notes || null,
+          updatedAt: new Date(),
+        }).where(eq(contacts.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'contact.update',
+          objectType: 'contact',
+          objectId:   row.id,
+          before:     { name: row.name, email: row.email },
+          after:      { name: input.name, email },
+        })
+      })
+      return { id: row.id }
+    }),
+
+  remove: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await loadContact(ctx, input.id)
+      const now = new Date()
+      await ctx.db.transaction(async tx => {
+        await tx.update(contacts).set({ deletedAt: now, updatedAt: now }).where(eq(contacts.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'contact.delete',
+          objectType: 'contact',
+          objectId:   row.id,
+          before:     { name: row.name, email: row.email },
+        })
+      })
+      return { ok: true }
+    }),
+})
+
+async function assertProjectWrite(ctx: { session: { userId: string; projectId: string }; db: Parameters<typeof can>[3] }) {
+  const allowed = await can(ctx.session.userId, 'write', {
+    type: 'project', id: ctx.session.projectId, projectId: ctx.session.projectId,
+  }, ctx.db)
+  if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+}
+
+async function loadContact(
+  ctx: { session: { userId: string; projectId: string }; db: Parameters<typeof can>[3] },
+  id: string,
+) {
+  const [row] = await ctx.db
+    .select()
+    .from(contacts)
+    .where(and(
+      eq(contacts.id, id),
+      eq(contacts.projectId, ctx.session.projectId),
+      eq(contacts.userId, ctx.session.userId),
+      isNull(contacts.deletedAt),
+    ))
+    .limit(1)
+  if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+  const allowed = await can(ctx.session.userId, 'write', {
+    type: 'contact', id: row.id, projectId: ctx.session.projectId,
+  }, ctx.db)
+  if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+  return row
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 const searchRouter = router({
@@ -272,6 +437,7 @@ export const appRouter = router({
   files:    filesRouter,
   pages:    pagesRouter,
   mail:     mailRouter,
+  contacts: contactsRouter,
   schedule: scheduleRouter,
   rooms:    roomsRouter,
   search:   searchRouter,

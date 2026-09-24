@@ -178,6 +178,20 @@ export const mailMessages = pgTable('mail_messages', {
   index('mail_messages_thread_idx').on(t.threadId),
 ]))
 
+// ─── Contacts (address book) ──────────────────────────────────────────────────
+
+export const contacts = pgTable('contacts', {
+  ...base,
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  userId:    uuid('user_id').notNull().references(() => users.id),
+  name:      text('name').notNull(),
+  email:     text('email').notNull(),
+  phone:     text('phone'),
+  notes:     text('notes'),
+}, t => ([
+  index('contacts_owner_idx').on(t.projectId, t.userId),
+]))
+
 // ─── Schedule (calendar) ──────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable('calendar_events', {
