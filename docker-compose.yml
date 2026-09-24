@@ -1,5 +1,3 @@
-version: "3.9"
-
 # TWork — NAS deployment
 # Usage: docker compose up -d
 # First-time setup: docker compose run --rm app node packages/db/dist/seed.js
@@ -84,7 +82,7 @@ services:
 
   # ── MinIO (S3-compatible object storage) ─────────────────────────────────────
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -93,14 +91,14 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout:  5s
       retries:  10
 
   # ── MinIO bucket init (runs once then exits) ──────────────────────────────────
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
