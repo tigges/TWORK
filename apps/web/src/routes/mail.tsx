@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
-import { Mail, PenLine, X } from 'lucide-react'
+import { Mail, PenLine, UserPlus, X } from 'lucide-react'
 import { trpc } from '../trpc.js'
 
 export function MailPage() {
@@ -11,6 +11,24 @@ export function MailPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composing, setComposing] = useState(!!search.to)
   const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [labelFilter, setLabelFilter] = useState<string | null>(null)
+
+  const knownLabels = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const row of list.data ?? []) {
+      for (const label of row.labels) {
+        const key = label.toLowerCase()
+        if (!seen.has(key)) seen.set(key, label)
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b))
+  }, [list.data])
+  const activeFilter = knownLabels.some(label => label.toLowerCase() === labelFilter?.toLowerCase())
+    ? labelFilter
+    : null
+  const rows = (list.data ?? []).filter(row =>
+    !activeFilter || row.labels.some(label => label.toLowerCase() === activeFilter.toLowerCase()),
+  )
 
   useEffect(() => {
     if (!search.to) return
@@ -18,7 +36,7 @@ export function MailPage() {
     setComposing(true)
   }, [search.to])
 
-  const selected = list.data?.find(row => row.id === selectedId) ?? list.data?.[0] ?? null
+  const selected = rows.find(row => row.id === selectedId) ?? rows[0] ?? null
   const activeId = selected?.id ?? null
 
   return (
@@ -38,6 +56,20 @@ export function MailPage() {
             Compose
           </button>
         </header>
+        {knownLabels.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <FilterChip active={!activeFilter} onClick={() => setLabelFilter(null)}>All</FilterChip>
+            {knownLabels.map(label => (
+              <FilterChip
+                key={label.toLowerCase()}
+                active={activeFilter?.toLowerCase() === label.toLowerCase()}
+                onClick={() => setLabelFilter(label)}
+              >
+                {label}
+              </FilterChip>
+            ))}
+          </div>
+        )}
         <div className="flex-1 overflow-auto">
           {list.isLoading && <p className="px-4 py-6 text-sm text-zinc-500">Loading…</p>}
           {list.data?.length === 0 && (
@@ -49,7 +81,10 @@ export function MailPage() {
               </p>
             </div>
           )}
-          {list.data?.map(row => {
+          {!list.isLoading && (list.data?.length ?? 0) > 0 && rows.length === 0 && (
+            <p className="px-4 py-6 text-sm text-zinc-500">No messages with this label.</p>
+          )}
+          {rows.map(row => {
             const unread = row.flags.includes('unread')
             const active = row.id === activeId
             const who = row.direction === 'outbound'
@@ -75,6 +110,18 @@ export function MailPage() {
                   {row.subject || '(no subject)'}
                 </p>
                 <p className="truncate text-xs text-zinc-400">{row.snippet || ' '}</p>
+                {row.labels.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {row.labels.map(label => (
+                      <span
+                        key={label}
+                        className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </button>
             )
           })}
@@ -124,6 +171,7 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
   if (!message.data) return <p className="p-8 text-sm text-zinc-500">Message not found.</p>
 
   const row = message.data
+  const party = counterparty(row)
   return (
     <article className="flex min-h-0 flex-1 flex-col">
       <header className="border-b border-zinc-200 px-8 py-5 dark:border-zinc-800">
@@ -137,12 +185,18 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
             Reply
           </button>
         </div>
-        <p className="mt-2 text-sm">{row.direction === 'outbound' ? 'To' : 'From'} {row.direction === 'outbound' ? row.toAddresses?.join(', ') : row.fromAddress}</p>
+        <p className="mt-2 flex items-center justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate">
+            {row.direction === 'outbound' ? 'To' : 'From'} {row.direction === 'outbound' ? row.toAddresses?.join(', ') : row.fromAddress}
+          </span>
+          {party && <SaveContact email={party.email} name={party.name} />}
+        </p>
         <p className="text-xs text-zinc-500">
           {row.direction === 'outbound' ? 'From' : 'To'} {row.direction === 'outbound' ? row.fromAddress : row.toAddresses?.join(', ')}
           {' · '}
           {new Date(row.receivedAt).toLocaleString()}
         </p>
+        <LabelEditor id={row.id} labels={row.labels} />
       </header>
       <div className="flex-1 overflow-auto px-8 py-6">
         <pre className="whitespace-pre-wrap font-sans text-sm leading-6">{row.textBody || ''}</pre>
@@ -274,6 +328,133 @@ function ContactMatches({
       ))}
     </ul>
   )
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        active
+          ? 'bg-indigo-600 text-white'
+          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  )
+}
+
+function LabelEditor({ id, labels }: { id: string; labels: string[] }) {
+  const utils = trpc.useUtils()
+  const [draft, setDraft] = useState('')
+  const setLabels = trpc.mail.setLabels.useMutation({
+    onSuccess: async () => {
+      setDraft('')
+      await Promise.all([
+        utils.mail.list.invalidate(),
+        utils.mail.get.invalidate({ id }),
+      ])
+    },
+  })
+
+  function commit(next: string[]) {
+    setLabels.mutate({ id, labels: next })
+  }
+
+  function onSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const label = draft.trim().replace(/\s+/g, ' ')
+    if (!label) return
+    if (labels.some(existing => existing.toLowerCase() === label.toLowerCase())) {
+      setDraft('')
+      return
+    }
+    commit([...labels, label])
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      {labels.map(label => (
+        <span
+          key={label}
+          className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200"
+        >
+          {label}
+          <button
+            type="button"
+            aria-label={`Remove ${label}`}
+            disabled={setLabels.isPending}
+            onClick={() => commit(labels.filter(existing => existing.toLowerCase() !== label.toLowerCase()))}
+            className="text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-100"
+          >
+            <X size={12} />
+          </button>
+        </span>
+      ))}
+      <form onSubmit={onSubmit}>
+        <input
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+          placeholder="Add label"
+          maxLength={40}
+          aria-label="Add label"
+          className="w-28 rounded-md border border-zinc-200 bg-transparent px-2 py-1 text-xs outline-none placeholder:text-zinc-400 focus:border-indigo-400 dark:border-zinc-700"
+        />
+      </form>
+      {setLabels.error && <span className="text-xs text-red-600">{setLabels.error.message}</span>}
+    </div>
+  )
+}
+
+function SaveContact({ email, name }: { email: string; name: string }) {
+  const utils = trpc.useUtils()
+  const contacts = trpc.contacts.list.useQuery({})
+  const create = trpc.contacts.create.useMutation({
+    onSettled: () => { void utils.contacts.list.invalidate() },
+  })
+  const saved = contacts.data?.some(row => row.email.toLowerCase() === email.toLowerCase()) ?? false
+  if (saved) return <span className="shrink-0 text-xs text-zinc-500">In Contacts</span>
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        disabled={create.isPending}
+        onClick={() => create.mutate({ name, email })}
+        className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
+      >
+        <UserPlus size={12} />
+        {create.isPending ? 'Saving…' : 'Add to Contacts'}
+      </button>
+      {create.error && <span className="max-w-40 text-xs text-red-600">{create.error.message}</span>}
+    </span>
+  )
+}
+
+function counterparty(row: {
+  direction: string
+  fromAddress: string | null
+  toAddresses: string[] | null
+}): { email: string; name: string } | null {
+  const raw = row.direction === 'outbound'
+    ? (row.toAddresses?.[0] ?? '')
+    : (row.fromAddress ?? '')
+  const email = extractEmail(raw).toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+$/.test(email)) return null
+  const named = raw.match(/^\s*"?([^"<]*?)"?\s*</)
+  const fromHeader = named?.[1]?.trim() ?? ''
+  const name = (fromHeader || email.slice(0, email.indexOf('@'))).slice(0, 200)
+  return { email, name }
 }
 
 function formatWhen(value: Date | string): string {
