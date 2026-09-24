@@ -15,7 +15,7 @@ import {
   searchIndex,
 } from '@twork/db'
 import { mailboxAddress } from './mailbox.js'
-import { buildRfc5322, deliverMail } from './mail-send.js'
+import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
 import { storeRawMessage } from './mail-store.js'
 import { calendarRouter } from './calendar-router.js'
 import { authed, router } from './trpc.js'
@@ -165,10 +165,10 @@ const mailRouter = router({
         type: 'project', id: ctx.session.projectId, projectId: ctx.session.projectId,
       }, ctx.db)
       if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
-      if (!process.env['MAILGUN_API_KEY']) {
+      if (!outboundConfigured()) {
         throw new TRPCError({
           code:    'PRECONDITION_FAILED',
-          message: 'Outbound mail is not configured yet. Set MAILGUN_API_KEY to send.',
+          message: 'Outbound mail is not configured yet. Set RESEND_API_KEY to send.',
         })
       }
 
