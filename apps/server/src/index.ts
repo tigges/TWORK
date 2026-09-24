@@ -10,6 +10,7 @@ import { createDb, runMigrations } from '@twork/db'
 import { StorageClient } from '@twork/storage'
 import { authRoutes } from './auth.js'
 import { createContext } from './context.js'
+import { mailInboundRoutes } from './mail-inbound.js'
 import { appRouter } from './router.js'
 
 export type { AppRouter } from './router.js'
@@ -48,6 +49,7 @@ async function main() {
   await app.register(ws)
 
   authRoutes(app, db, { rpId: RP_ID, rpName: RP_NAME, origin: ORIGIN })
+  await mailInboundRoutes(app, db, storage)
 
   await app.register(fastifyTRPCPlugin, {
     prefix:      '/trpc',
