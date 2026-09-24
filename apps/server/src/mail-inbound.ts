@@ -1,6 +1,6 @@
 import multipart from '@fastify/multipart'
 import { createHmac } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DB } from '@twork/db'
 import type { StorageClient } from '@twork/storage'
 import { primaryMailbox, safeEqual, storeRawMessage } from './mail-store.js'
@@ -10,6 +10,12 @@ const MAX_BYTES = 25 * 1024 * 1024
 export async function mailInboundRoutes(app: FastifyInstance, db: DB, storage: StorageClient) {
   app.addContentTypeParser(/^message\/rfc822$/i, { parseAs: 'buffer' }, (_req, body, done) => {
     done(null, body)
+  })
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    const text = typeof body === 'string' ? body : body.toString('utf8')
+    const fields: Record<string, string> = {}
+    for (const [key, value] of new URLSearchParams(text)) fields[key] = value
+    done(null, fields)
   })
 
   await app.register(multipart, {
@@ -43,19 +49,12 @@ export async function mailInboundRoutes(app: FastifyInstance, db: DB, storage: S
     return { id }
   })
 
-  // Mailgun inbound route. Requires "forward the raw MIME" so body-mime is the original message.
-  app.post('/mail/inbound/mailgun', { bodyLimit: MAX_BYTES }, async (req, reply) => {
+  // Mailgun posts the original message when the URL ends in /mime.
+  const mailgun = async (req: FastifyRequest, reply: FastifyReply) => {
     const signingKey = process.env['MAILGUN_SIGNING_KEY']
     if (!signingKey) return reply.status(503).send({ error: 'mailgun signing key is not set' })
 
-    const fields: Record<string, string> = {}
-    for await (const part of req.parts()) {
-      if (part.type === 'file') {
-        fields[part.fieldname] = (await part.toBuffer()).toString('utf8')
-      } else {
-        fields[part.fieldname] = String(part.value)
-      }
-    }
+    const fields = await mailgunFields(req)
     if (!verifyMailgun(signingKey, fields['timestamp'], fields['token'], fields['signature'])) {
       return reply.status(401).send({ error: 'invalid signature' })
     }
@@ -72,7 +71,26 @@ export async function mailInboundRoutes(app: FastifyInstance, db: DB, storage: S
       raw:       Buffer.from(rawMime, 'utf8'),
     })
     return { id }
-  })
+  }
+
+  app.post('/mail/inbound/mailgun', { bodyLimit: MAX_BYTES }, mailgun)
+  app.post('/mail/inbound/mailgun/mime', { bodyLimit: MAX_BYTES }, mailgun)
+}
+
+async function mailgunFields(req: FastifyRequest): Promise<Record<string, string>> {
+  const contentType = String(req.headers['content-type'] ?? '')
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const body = req.body
+    if (body && typeof body === 'object' && !Buffer.isBuffer(body)) {
+      return body as Record<string, string>
+    }
+  }
+  const fields: Record<string, string> = {}
+  for await (const part of req.parts()) {
+    if (part.type === 'file') fields[part.fieldname] = (await part.toBuffer()).toString('utf8')
+    else fields[part.fieldname] = String(part.value)
+  }
+  return fields
 }
 
 function verifyMailgun(
