@@ -11,6 +11,8 @@ export default defineConfig({
       '/auth/me':        { target: 'http://localhost:3001' },
       '/auth/logout':    { target: 'http://localhost:3001' },
       '/auth/passkey':   { target: 'http://localhost:3001' },
+      '/files/upload':   { target: 'http://localhost:3001' },
+      '/files/download': { target: 'http://localhost:3001' },
     },
   },
 })

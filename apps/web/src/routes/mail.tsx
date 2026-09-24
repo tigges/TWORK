@@ -11,22 +11,29 @@ export function MailPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composing, setComposing] = useState(!!search.to)
   const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [box, setBox] = useState<'inbox' | 'sent'>('inbox')
   const [labelFilter, setLabelFilter] = useState<string | null>(null)
 
+  const boxed = useMemo(
+    () => (list.data ?? []).filter(row =>
+      box === 'sent' ? row.direction === 'outbound' : row.direction !== 'outbound',
+    ),
+    [list.data, box],
+  )
   const knownLabels = useMemo(() => {
     const seen = new Map<string, string>()
-    for (const row of list.data ?? []) {
+    for (const row of boxed) {
       for (const label of row.labels) {
         const key = label.toLowerCase()
         if (!seen.has(key)) seen.set(key, label)
       }
     }
     return [...seen.values()].sort((a, b) => a.localeCompare(b))
-  }, [list.data])
+  }, [boxed])
   const activeFilter = knownLabels.some(label => label.toLowerCase() === labelFilter?.toLowerCase())
     ? labelFilter
     : null
-  const rows = (list.data ?? []).filter(row =>
+  const rows = boxed.filter(row =>
     !activeFilter || row.labels.some(label => label.toLowerCase() === activeFilter.toLowerCase()),
   )
 
@@ -56,32 +63,33 @@ export function MailPage() {
             Compose
           </button>
         </header>
-        {knownLabels.length > 0 && (
-          <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <FilterChip active={!activeFilter} onClick={() => setLabelFilter(null)}>All</FilterChip>
-            {knownLabels.map(label => (
-              <FilterChip
-                key={label.toLowerCase()}
-                active={activeFilter?.toLowerCase() === label.toLowerCase()}
-                onClick={() => setLabelFilter(label)}
-              >
-                {label}
-              </FilterChip>
-            ))}
-          </div>
-        )}
+        <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+          <FilterChip active={box === 'inbox'} onClick={() => { setBox('inbox'); setSelectedId(null); setLabelFilter(null) }}>Inbox</FilterChip>
+          <FilterChip active={box === 'sent'} onClick={() => { setBox('sent'); setSelectedId(null); setLabelFilter(null) }}>Sent</FilterChip>
+          {knownLabels.map(label => (
+            <FilterChip
+              key={label.toLowerCase()}
+              active={activeFilter?.toLowerCase() === label.toLowerCase()}
+              onClick={() => setLabelFilter(label)}
+            >
+              {label}
+            </FilterChip>
+          ))}
+        </div>
         <div className="flex-1 overflow-auto">
           {list.isLoading && <p className="px-4 py-6 text-sm text-zinc-500">Loading…</p>}
-          {list.data?.length === 0 && (
+          {!list.isLoading && boxed.length === 0 && (
             <div className="px-6 py-16 text-center">
               <Mail className="mx-auto mb-3 text-zinc-300" size={28} />
-              <p className="text-sm font-medium">No messages yet</p>
+              <p className="text-sm font-medium">{box === 'sent' ? 'Nothing sent yet' : 'Inbox is empty'}</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Mail sent to {address.data?.address ?? 'your address'} will show up here.
+                {box === 'sent'
+                  ? 'Messages you send show up here.'
+                  : `Mail sent to ${address.data?.address ?? 'your address'} will show up here.`}
               </p>
             </div>
           )}
-          {!list.isLoading && (list.data?.length ?? 0) > 0 && rows.length === 0 && (
+          {!list.isLoading && boxed.length > 0 && rows.length === 0 && (
             <p className="px-4 py-6 text-sm text-zinc-500">No messages with this label.</p>
           )}
           {rows.map(row => {
@@ -146,6 +154,9 @@ export function MailPage() {
           onClose={() => setComposing(false)}
           onSent={async () => {
             setComposing(false)
+            setBox('sent')
+            setLabelFilter(null)
+            setSelectedId(null)
             await utils.mail.list.invalidate()
           }}
         />
