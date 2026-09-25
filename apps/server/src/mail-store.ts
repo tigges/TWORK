@@ -1,8 +1,11 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { timingSafeEqual } from 'node:crypto'
+import { and, eq, isNull } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import type { DB } from '@twork/db'
-import { applyParsedMail, auditLog, blobs, grants, mailMessages, users } from '@twork/db'
+import { applyParsedMail, auditLog, grants, mailMessages, users } from '@twork/db'
+import { buildRfc5322 } from './mail-send.js'
+import { ensureBlob, retainBlob } from './blob-store.js'
+
 interface BlobStore {
   put(
     body:        Buffer,
@@ -25,29 +28,7 @@ export async function storeRawMessage(
     raw:       Buffer
   },
 ): Promise<string> {
-  const meta = await storage.put(input.raw, 'message/rfc822', input.projectId)
-  const sha  = meta.sha256 || createHash('sha256').update(input.raw).digest('hex')
-
-  const inserted = await db.insert(blobs).values({
-    id:          uuidv7(),
-    projectId:   input.projectId,
-    sha256:      sha,
-    sizeBytes:   meta.sizeBytes,
-    contentType: 'message/rfc822',
-    storageKey:  meta.storageKey,
-    refCount:    0,
-  }).onConflictDoNothing({ target: [blobs.projectId, blobs.sha256] }).returning({ id: blobs.id })
-
-  let blobId = inserted[0]?.id
-  if (!blobId) {
-    const [existing] = await db
-      .select({ id: blobs.id })
-      .from(blobs)
-      .where(and(eq(blobs.projectId, input.projectId), eq(blobs.sha256, sha)))
-      .limit(1)
-    if (!existing) throw new Error('blob row missing after upload')
-    blobId = existing.id
-  }
+  const blobId = await ensureBlob(db, storage, input.projectId, input.raw, 'message/rfc822')
 
   const [duplicate] = await db
     .select({ id: mailMessages.id })
@@ -73,9 +54,7 @@ export async function storeRawMessage(
         flags:       input.direction === 'inbound' ? ['unread'] : [],
         labels:      [],
       })
-      await tx.update(blobs)
-        .set({ refCount: sql`${blobs.refCount} + 1`, updatedAt: new Date() })
-        .where(eq(blobs.id, blobId))
+      await retainBlob(tx as unknown as DB, blobId)
       await tx.insert(auditLog).values({
         id:         uuidv7(),
         projectId:  input.projectId,
@@ -99,6 +78,90 @@ export async function storeRawMessage(
 
   await applyParsedMail(db, messageId, input.raw)
   return messageId
+}
+
+/** Keep an unsent message. A later save replaces the raw bytes on the same row. */
+export async function saveDraftMessage(
+  db:      DB,
+  storage: BlobStore,
+  input: {
+    projectId:   string
+    userId:      string
+    fromName:    string
+    fromAddress: string
+    id?:         string
+    to:          string
+    cc:          string[]
+    bcc:         string[]
+    subject:     string
+    text:        string
+  },
+): Promise<string> {
+  const raw = buildRfc5322({
+    fromName:    input.fromName,
+    fromAddress: input.fromAddress,
+    to:          input.to,
+    cc:          input.cc,
+    bcc:         input.bcc,
+    subject:     input.subject,
+    text:        input.text,
+  })
+
+  if (!input.id) {
+    const blobId = await ensureBlob(db, storage, input.projectId, raw, 'message/rfc822')
+    const messageId = uuidv7()
+    await db.transaction(async tx => {
+      await tx.insert(mailMessages).values({
+        id:          messageId,
+        projectId:   input.projectId,
+        userId:      input.userId,
+        rawBlobId:   blobId,
+        receivedAt:  new Date(),
+        direction:   'outbound',
+        flags:       ['draft'],
+        labels:      [],
+      })
+      await retainBlob(tx as unknown as DB, blobId)
+      await tx.insert(auditLog).values({
+        id:         uuidv7(),
+        projectId:  input.projectId,
+        actorId:    input.userId,
+        action:     'mail.draft',
+        objectType: 'mail',
+        objectId:   messageId,
+        after:      { rawBlobId: blobId },
+      })
+    })
+    await applyParsedMail(db, messageId, raw)
+    await db.update(mailMessages).set({ flags: ['draft'] }).where(eq(mailMessages.id, messageId))
+    return messageId
+  }
+
+  const [row] = await db
+    .select({ id: mailMessages.id, flags: mailMessages.flags })
+    .from(mailMessages)
+    .where(and(
+      eq(mailMessages.id, input.id),
+      eq(mailMessages.projectId, input.projectId),
+      eq(mailMessages.userId, input.userId),
+      isNull(mailMessages.deletedAt),
+    ))
+    .limit(1)
+  if (!row || !row.flags.includes('draft')) throw new Error('draft not found')
+
+  const blobId = await ensureBlob(db, storage, input.projectId, raw, 'message/rfc822')
+  await db.update(mailMessages).set({
+    rawBlobId: blobId,
+    parsedAt:  null,
+    updatedAt: new Date(),
+  }).where(eq(mailMessages.id, row.id))
+  await retainBlob(db, blobId)
+  await applyParsedMail(db, row.id, raw)
+  await db.update(mailMessages).set({
+    flags:     ['draft'],
+    updatedAt: new Date(),
+  }).where(eq(mailMessages.id, row.id))
+  return row.id
 }
 
 export async function primaryMailbox(db: DB): Promise<{ userId: string; projectId: string } | null> {

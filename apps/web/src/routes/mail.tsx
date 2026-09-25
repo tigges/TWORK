@@ -13,13 +13,12 @@ export function MailPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composing, setComposing] = useState(!!search.to)
   const [replyTo, setReplyTo] = useState<string | null>(null)
-  const [box, setBox] = useState<'inbox' | 'sent'>('inbox')
+  const [box, setBox] = useState<'inbox' | 'sent' | 'drafts' | 'spam'>('inbox')
+  const [draftId, setDraftId] = useState<string | null>(null)
   const [labelFilter, setLabelFilter] = useState<string | null>(null)
 
   const boxed = useMemo(
-    () => (list.data ?? []).filter(row =>
-      box === 'sent' ? row.direction === 'outbound' : row.direction !== 'outbound',
-    ),
+    () => (list.data ?? []).filter(row => inBox(row, box)),
     [list.data, box],
   )
   const knownLabels = useMemo(() => {
@@ -69,7 +68,7 @@ export function MailPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setReplyTo(null); setComposing(true) }}
+              onClick={() => { setReplyTo(null); setDraftId(null); setComposing(true) }}
               className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
             >
               <PenLine size={14} />
@@ -80,6 +79,8 @@ export function MailPage() {
         <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <FilterChip active={box === 'inbox'} onClick={() => { setBox('inbox'); setSelectedId(null); setLabelFilter(null) }}>Inbox</FilterChip>
           <FilterChip active={box === 'sent'} onClick={() => { setBox('sent'); setSelectedId(null); setLabelFilter(null) }}>Sent</FilterChip>
+          <FilterChip active={box === 'drafts'} onClick={() => { setBox('drafts'); setSelectedId(null); setLabelFilter(null) }}>Drafts</FilterChip>
+          <FilterChip active={box === 'spam'} onClick={() => { setBox('spam'); setSelectedId(null); setLabelFilter(null) }}>Spam</FilterChip>
           {knownLabels.map(label => (
             <FilterChip
               key={label.toLowerCase()}
@@ -95,11 +96,11 @@ export function MailPage() {
           {!list.isLoading && boxed.length === 0 && (
             <div className="px-6 py-16 text-center">
               <Mail className="mx-auto mb-3 text-zinc-300" size={28} />
-              <p className="text-sm font-medium">{box === 'sent' ? 'Nothing sent yet' : 'Inbox is empty'}</p>
+              <p className="text-sm font-medium">{emptyTitle(box)}</p>
               <p className="mt-1 text-xs text-zinc-500">
-                {box === 'sent'
-                  ? 'Messages you send show up here.'
-                  : `Mail sent to ${address.data?.address ?? 'your address'} will show up here.`}
+                {box === 'inbox'
+                  ? `Mail sent to ${address.data?.address ?? 'your address'} will show up here.`
+                  : emptyDetail(box)}
               </p>
             </div>
           )}
@@ -152,7 +153,11 @@ export function MailPage() {
 
       <section className="flex min-w-0 flex-1 flex-col">
         {activeId
-          ? <MessageView id={activeId} onReply={(id) => { setReplyTo(id); setComposing(true) }} />
+          ? <MessageView
+              id={activeId}
+              onReply={(id) => { setDraftId(null); setReplyTo(id); setComposing(true) }}
+              onEdit={(id) => { setReplyTo(null); setDraftId(id); setComposing(true) }}
+            />
           : (
             <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
               Select a message
@@ -162,15 +167,25 @@ export function MailPage() {
 
       {composing && (
         <Compose
-          key={`${replyTo ?? ''}:${search.to ?? ''}`}
+          key={`${replyTo ?? ''}:${draftId ?? ''}:${search.to ?? ''}`}
           initialTo={search.to ?? ''}
           replyToId={replyTo}
+          draftId={draftId}
           onClose={() => setComposing(false)}
           onSent={async () => {
             setComposing(false)
+            setDraftId(null)
             setBox('sent')
             setLabelFilter(null)
             setSelectedId(null)
+            await utils.mail.list.invalidate()
+          }}
+          onDrafted={async (id) => {
+            setComposing(false)
+            setDraftId(id)
+            setBox('drafts')
+            setLabelFilter(null)
+            setSelectedId(id)
             await utils.mail.list.invalidate()
           }}
         />
@@ -179,11 +194,27 @@ export function MailPage() {
   )
 }
 
-function MessageView({ id, onReply }: { id: string; onReply: (id: string) => void }) {
+function MessageView({
+  id,
+  onReply,
+  onEdit,
+}: {
+  id: string
+  onReply: (id: string) => void
+  onEdit: (id: string) => void
+}) {
   const utils = trpc.useUtils()
   const message = trpc.mail.get.useQuery({ id })
   const markRead = trpc.mail.markRead.useMutation({
     onSuccess: () => { void utils.mail.list.invalidate() },
+  })
+  const setSpam = trpc.mail.setSpam.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.mail.list.invalidate(),
+        utils.mail.get.invalidate({ id }),
+      ])
+    },
   })
 
   useEffect(() => {
@@ -202,13 +233,35 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
       <header className="border-b border-zinc-200 px-8 py-5 dark:border-zinc-800">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-lg font-semibold">{row.subject || '(no subject)'}</h2>
-          <button
-            type="button"
-            onClick={() => onReply(row.id)}
-            className="shrink-0 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            Reply
-          </button>
+          <div className="flex shrink-0 gap-2">
+            {row.flags.includes('draft') ? (
+              <button
+                type="button"
+                onClick={() => onEdit(row.id)}
+                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Edit
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onReply(row.id)}
+                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Reply
+              </button>
+            )}
+            {row.direction === 'inbound' && !row.flags.includes('draft') && (
+              <button
+                type="button"
+                disabled={setSpam.isPending}
+                onClick={() => setSpam.mutate({ id: row.id, spam: !row.flags.includes('spam') })}
+                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {row.flags.includes('spam') ? 'Not spam' : 'Spam'}
+              </button>
+            )}
+          </div>
         </div>
         <p className="mt-2 flex items-center justify-between gap-3 text-sm">
           <span className="min-w-0 truncate">
@@ -234,18 +287,26 @@ function MessageView({ id, onReply }: { id: string; onReply: (id: string) => voi
 function Compose({
   initialTo,
   replyToId,
+  draftId,
   onClose,
   onSent,
+  onDrafted,
 }: {
   initialTo: string
   replyToId: string | null
+  draftId: string | null
   onClose: () => void
   onSent: () => Promise<void>
+  onDrafted: (id: string) => Promise<void>
 }) {
   const reply = trpc.mail.get.useQuery({ id: replyToId ?? '00000000-0000-0000-0000-000000000000' }, {
     enabled: !!replyToId,
   })
+  const draft = trpc.mail.get.useQuery({ id: draftId ?? '00000000-0000-0000-0000-000000000000' }, {
+    enabled: !!draftId,
+  })
   const send = trpc.mail.send.useMutation()
+  const saveDraft = trpc.mail.saveDraft.useMutation()
   const contacts = trpc.contacts.list.useQuery({})
   const [to, setTo] = useState(replyToId ? '' : initialTo)
   const [cc, setCc] = useState('')
@@ -256,7 +317,8 @@ function Compose({
   const [subject, setSubject] = useState('')
   const [text, setText] = useState('')
   const [formError, setFormError] = useState('')
-  const [ready, setReady] = useState(!replyToId)
+  const [ready, setReady] = useState(!replyToId && !draftId)
+  const [savedId, setSavedId] = useState<string | null>(draftId)
 
   useEffect(() => {
     if (!reply.data || ready) return
@@ -266,6 +328,18 @@ function Compose({
     setSubject(sub.toLowerCase().startsWith('re:') ? sub : `Re: ${sub}`)
     setReady(true)
   }, [reply.data, ready])
+
+  useEffect(() => {
+    if (!draft.data || ready) return
+    setTo(draft.data.toAddresses?.[0] ?? '')
+    setCc((draft.data.ccAddresses ?? []).join(', '))
+    setBcc((draft.data.bccAddresses ?? []).join(', '))
+    setCcOpen((draft.data.ccAddresses ?? []).length > 0)
+    setBccOpen((draft.data.bccAddresses ?? []).length > 0)
+    setSubject(draft.data.subject ?? '')
+    setText(draft.data.textBody ?? '')
+    setReady(true)
+  }, [draft.data, ready])
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -282,6 +356,10 @@ function Compose({
       return
     }
     setFormError('')
+    if (!isEmail(to)) {
+      setFormError('To has an address that is not an email.')
+      return
+    }
     await send.mutateAsync({
       to,
       cc: ccList,
@@ -289,8 +367,37 @@ function Compose({
       subject,
       text,
       ...(reply.data?.messageIdHdr ? { inReplyTo: reply.data.messageIdHdr } : {}),
+      ...(savedId ? { draftId: savedId } : {}),
     })
     await onSent()
+  }
+
+  async function onSaveDraft() {
+    const ccList = splitAddresses(cc)
+    const bccList = splitAddresses(bcc)
+    const invalid = (label: string, list: string[]) => list.some(addr => !isEmail(addr))
+      ? `${label} has an address that is not an email.`
+      : list.length > 20
+        ? `${label} can have at most 20 addresses.`
+        : ''
+    const problem = (to.trim() && !isEmail(to.trim()) ? 'To has an address that is not an email.' : '')
+      || invalid('Cc', ccList)
+      || invalid('Bcc', bccList)
+    if (problem) {
+      setFormError(problem)
+      return
+    }
+    setFormError('')
+    const saved = await saveDraft.mutateAsync({
+      ...(savedId ? { id: savedId } : {}),
+      to: to.trim(),
+      cc: ccList,
+      bcc: bccList,
+      subject,
+      text,
+    })
+    setSavedId(saved.id)
+    await onDrafted(saved.id)
   }
 
   return (
@@ -300,7 +407,7 @@ function Compose({
         className="flex w-full max-w-xl flex-col rounded-xl bg-white shadow-xl dark:bg-zinc-900"
       >
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">{replyToId ? 'Reply' : 'New message'}</h2>
+          <h2 className="text-sm font-semibold">{replyToId ? 'Reply' : draftId ? 'Draft' : 'New message'}</h2>
           <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700" aria-label="Close">
             <X size={16} />
           </button>
@@ -359,13 +466,23 @@ function Compose({
           rows={10}
           className="resize-none bg-transparent px-4 py-3 text-sm outline-none"
         />
-        {(formError || send.error) && (
-          <p className="px-4 pb-2 text-xs text-red-600">{formError || send.error?.message}</p>
+        {(formError || send.error || saveDraft.error) && (
+          <p className="px-4 pb-2 text-xs text-red-600">{formError || send.error?.message || saveDraft.error?.message}</p>
         )}
-        <div className="flex justify-end px-4 py-3">
+        <div className="flex justify-end gap-2 px-4 py-3">
+          {!replyToId && (
+            <button
+              type="button"
+              disabled={saveDraft.isPending || send.isPending}
+              onClick={() => { void onSaveDraft() }}
+              className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              {saveDraft.isPending ? 'Saving…' : 'Save draft'}
+            </button>
+          )}
           <button
             type="submit"
-            disabled={send.isPending}
+            disabled={send.isPending || saveDraft.isPending}
             className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
           >
             {send.isPending ? 'Sending…' : 'Send'}
@@ -599,6 +716,32 @@ function counterparty(row: {
   const fromHeader = named?.[1]?.trim() ?? ''
   const name = (fromHeader || email.slice(0, email.indexOf('@'))).slice(0, 200)
   return { email, name }
+}
+
+function inBox(
+  row: { direction: string; flags: string[] },
+  box: 'inbox' | 'sent' | 'drafts' | 'spam',
+): boolean {
+  const draft = row.flags.includes('draft')
+  const spam = row.flags.includes('spam')
+  if (box === 'drafts') return draft
+  if (box === 'spam') return spam && !draft
+  if (box === 'sent') return row.direction === 'outbound' && !draft
+  return row.direction !== 'outbound' && !spam && !draft
+}
+
+function emptyTitle(box: 'inbox' | 'sent' | 'drafts' | 'spam'): string {
+  if (box === 'sent') return 'Nothing sent yet'
+  if (box === 'drafts') return 'No drafts'
+  if (box === 'spam') return 'No spam'
+  return 'Inbox is empty'
+}
+
+function emptyDetail(box: 'inbox' | 'sent' | 'drafts' | 'spam'): string {
+  if (box === 'sent') return 'Messages you send show up here.'
+  if (box === 'drafts') return 'Save a message before sending and it will show up here.'
+  if (box === 'spam') return 'Mail you mark as spam leaves the inbox and shows up here.'
+  return ''
 }
 
 function formatWhen(value: Date | string): string {

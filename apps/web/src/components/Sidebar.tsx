@@ -25,9 +25,9 @@ const NAV: NavItem[] = [
   { to: '/mail',     icon: <Mail size={20} />,          label: 'Mail'     },
   { to: '/contacts', icon: <Users size={20} />,          label: 'Contacts' },
   { to: '/files',    icon: <Folder size={20} />,         label: 'Files'    },
-  { to: '/pages',    icon: <FileText size={20} />,       label: 'Pages'    },
+  { to: '/notes',    icon: <FileText size={20} />,       label: 'Notes'    },
   { to: '/calendar', icon: <Calendar size={20} />,       label: 'Calendar' },
-  { to: '/rooms',    icon: <MessageSquare size={20} />,  label: 'Rooms'    },
+  { to: '/chat',     icon: <MessageSquare size={20} />,  label: 'Chat'     },
 ]
 
 export const navButtonClass = [
