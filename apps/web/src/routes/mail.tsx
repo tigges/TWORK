@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import { Mail, PenLine, UserPlus, X } from 'lucide-react'
+import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
 export function MailPage() {
+  const sidebarOpen = useSidebarOpen()
   const utils = trpc.useUtils()
   const search = useSearch({ from: '/mail' })
   const address = trpc.mail.address.useQuery()
@@ -49,7 +51,7 @@ export function MailPage() {
   return (
     <div className="flex h-full min-h-0">
       <section className="flex w-[340px] shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-        <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+        <header className={['flex items-center justify-between gap-3 border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
           <div className="min-w-0">
             <h1 className="text-sm font-semibold">Mail</h1>
             <p className="truncate text-xs text-zinc-500">{address.data?.address ?? ' '}</p>

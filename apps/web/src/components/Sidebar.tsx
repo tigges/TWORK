@@ -30,7 +30,19 @@ const NAV: NavItem[] = [
   { to: '/rooms',    icon: <MessageSquare size={20} />,  label: 'Rooms'    },
 ]
 
-export function Sidebar({ user }: { user: { displayName: string; email: string } | null }) {
+export const navButtonClass = [
+  'flex items-center justify-center w-10 h-10 rounded-lg transition-colors',
+  'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900',
+  'dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+].join(' ')
+
+export function Sidebar({
+  user,
+  onHide,
+}: {
+  user:   { displayName: string; email: string } | null
+  onHide: () => void
+}) {
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
 
@@ -42,21 +54,24 @@ export function Sidebar({ user }: { user: { displayName: string; email: string }
     .toUpperCase() ?? '?'
 
   return (
-    <aside className="flex flex-col items-center gap-1 h-screen py-3 bg-zinc-950 dark:bg-zinc-950 text-zinc-400 w-14 shrink-0">
-      {/* Logo */}
-      <div className="mb-1 flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold text-sm select-none">
+    <aside className="flex flex-col items-center gap-1 h-screen py-3 w-14 shrink-0 border-r border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      <button
+        type="button"
+        title="Hide sidebar"
+        aria-label="Hide sidebar"
+        onClick={onHide}
+        className="mb-1 flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold text-sm select-none"
+      >
         TW
-      </div>
-      <div className="mb-2 text-[10px] font-medium leading-none text-zinc-500" title={`Version ${appVersion}`}>
+      </button>
+      <div className="mb-2 text-[10px] font-medium leading-none text-zinc-400 dark:text-zinc-500" title={`Version ${appVersion}`}>
         {appVersion}
       </div>
 
-      {/* Search shortcut */}
       <NavBtn icon={<Search size={18} />} label="Search" onClick={() => {}} />
 
-      <div className="w-8 h-px bg-zinc-800 my-1" />
+      <div className="w-8 h-px bg-zinc-200 dark:bg-zinc-800 my-1" />
 
-      {/* Module nav */}
       {NAV.map(item => {
         const active = pathname.startsWith(item.to)
         return (
@@ -68,7 +83,7 @@ export function Sidebar({ user }: { user: { displayName: string; email: string }
               'flex items-center justify-center w-10 h-10 rounded-lg transition-colors',
               active
                 ? 'bg-indigo-600 text-white'
-                : 'hover:bg-zinc-800 hover:text-zinc-100',
+                : 'hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
             ].join(' ')}
           >
             {item.icon}
@@ -76,25 +91,21 @@ export function Sidebar({ user }: { user: { displayName: string; email: string }
         )
       })}
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Theme toggle */}
       <NavBtn
         icon={theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         onClick={toggleTheme}
       />
 
-      {/* User avatar */}
       <div
-        className="flex items-center justify-center w-9 h-9 rounded-full bg-zinc-700 text-zinc-100 text-xs font-semibold select-none cursor-default"
+        className="flex items-center justify-center w-9 h-9 rounded-full bg-zinc-200 text-zinc-700 text-xs font-semibold select-none cursor-default dark:bg-zinc-700 dark:text-zinc-100"
         title={user?.email ?? 'No user'}
       >
         {initials}
       </div>
 
-      {/* Logout */}
       <NavBtn
         icon={<LogOut size={18} />}
         label="Sign out"
@@ -118,7 +129,7 @@ function NavBtn({
     <button
       title={label}
       onClick={onClick}
-      className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+      className={navButtonClass}
     >
       {icon}
     </button>

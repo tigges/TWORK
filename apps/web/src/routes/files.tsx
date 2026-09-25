@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { FileText, Folder, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
 type BrowseRow = {
@@ -12,6 +13,7 @@ type BrowseRow = {
 }
 
 export function FilesPage() {
+  const sidebarOpen = useSidebarOpen()
   const utils = trpc.useUtils()
   const [view, setView] = useState<'browse' | 'trash'>('browse')
   const [parentId, setParentId] = useState<string | null>(null)
@@ -107,7 +109,7 @@ export function FilesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+      <header className={['flex items-center justify-between gap-3 border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-5' : 'pl-14 pr-5'].join(' ')}>
         <nav className="flex min-w-0 items-center gap-1 text-sm">
           <Crumb active={view === 'browse' && !parentId} onClick={() => openFolder(null)}>Files</Crumb>
           {view === 'browse' && (list.data?.crumbs ?? []).map((crumb, index, all) => (
