@@ -76,11 +76,15 @@ export function MailPage() {
             </button>
           </div>
         </header>
-        <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+        <div className="flex flex-wrap gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <FilterChip active={box === 'inbox'} onClick={() => { setBox('inbox'); setSelectedId(null); setLabelFilter(null) }}>Inbox</FilterChip>
           <FilterChip active={box === 'sent'} onClick={() => { setBox('sent'); setSelectedId(null); setLabelFilter(null) }}>Sent</FilterChip>
-          <FilterChip active={box === 'drafts'} onClick={() => { setBox('drafts'); setSelectedId(null); setLabelFilter(null) }}>Drafts</FilterChip>
-          <FilterChip active={box === 'spam'} onClick={() => { setBox('spam'); setSelectedId(null); setLabelFilter(null) }}>Spam</FilterChip>
+          {box !== 'sent' && (
+            <FilterChip active={box === 'drafts'} onClick={() => { setBox('drafts'); setSelectedId(null); setLabelFilter(null) }}>Drafts</FilterChip>
+          )}
+          {box !== 'sent' && (
+            <FilterChip active={box === 'spam'} onClick={() => { setBox('spam'); setSelectedId(null); setLabelFilter(null) }}>Spam</FilterChip>
+          )}
           {knownLabels.map(label => (
             <FilterChip
               key={label.toLowerCase()}
@@ -502,7 +506,7 @@ function CopyField({
 }: {
   label: string
   value: string
-  contacts: { id: string; name: string; email: string }[]
+  contacts: { id: string; name: string; email: string; emails: string[] }[]
   onChange: (value: string) => void
   onCollapse: () => void
 }) {
@@ -565,12 +569,12 @@ function ContactMatches({
   onPick,
 }: {
   query:    string
-  contacts: { id: string; name: string; email: string }[]
+  contacts: { id: string; name: string; email: string; emails: string[] }[]
   onPick:   (email: string) => void
 }) {
   const q = query.trim().toLowerCase()
   const matches = contacts.filter(row =>
-    q.length === 0 || row.name.toLowerCase().includes(q) || row.email.toLowerCase().includes(q),
+    q.length === 0 || row.name.toLowerCase().includes(q) || row.emails.some(email => email.toLowerCase().includes(q)),
   ).slice(0, 6)
   if (matches.length === 0) return null
   return (
@@ -605,7 +609,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={[
-        'shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        'rounded-full px-2.5 py-0.5 text-xs font-medium',
         active
           ? 'bg-indigo-600 text-white'
           : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -684,14 +688,14 @@ function SaveContact({ email, name }: { email: string; name: string }) {
   const create = trpc.contacts.create.useMutation({
     onSettled: () => { void utils.contacts.list.invalidate() },
   })
-  const saved = contacts.data?.some(row => row.email.toLowerCase() === email.toLowerCase()) ?? false
+  const saved = contacts.data?.some(row => row.emails.some(item => item.toLowerCase() === email.toLowerCase())) ?? false
   if (saved) return <span className="shrink-0 text-xs text-zinc-500">In Contacts</span>
   return (
     <span className="flex shrink-0 items-center gap-2">
       <button
         type="button"
         disabled={create.isPending}
-        onClick={() => create.mutate({ name, email })}
+        onClick={() => create.mutate({ name, emails: [email] })}
         className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
       >
         <UserPlus size={12} />

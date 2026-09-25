@@ -5,11 +5,13 @@ import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
 type Contact = {
-  id:    string
-  name:  string
-  email: string
-  phone: string | null
-  notes: string | null
+  id:     string
+  name:   string
+  email:  string
+  phone:  string | null
+  emails: string[]
+  phones: string[]
+  notes:  string | null
 }
 
 export function ContactsPage() {
@@ -23,7 +25,7 @@ export function ContactsPage() {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (list.data ?? []).filter(row =>
-      !q || row.name.toLowerCase().includes(q) || row.email.toLowerCase().includes(q),
+      !q || row.name.toLowerCase().includes(q) || row.emails.some(email => email.includes(q)) || row.phones.some(phone => phone.includes(q)),
     )
   }, [list.data, query])
 
@@ -124,21 +126,33 @@ function ContactForm({
   onSaved:   (id: string) => Promise<void>
   onDeleted?: () => Promise<void>
 }) {
+  const utils = trpc.useUtils()
+  const list = trpc.contacts.list.useQuery({})
   const create = trpc.contacts.create.useMutation()
   const update = trpc.contacts.update.useMutation()
+  const merge = trpc.contacts.merge.useMutation()
   const remove = trpc.contacts.remove.useMutation()
   const [name, setName] = useState(contact?.name ?? '')
-  const [email, setEmail] = useState(contact?.email ?? '')
-  const [phone, setPhone] = useState(contact?.phone ?? '')
+  const [emails, setEmails] = useState(contact?.emails?.length ? contact.emails : [''])
+  const [phones, setPhones] = useState(contact?.phones ?? [])
   const [notes, setNotes] = useState(contact?.notes ?? '')
-  const error = create.error ?? update.error ?? remove.error
+  const error = create.error ?? update.error ?? remove.error ?? merge.error
+  const filledEmails = emails.map(value => value.trim()).filter(Boolean)
+  const filledPhones = phones.map(value => value.trim()).filter(Boolean)
+  const clash = (list.data ?? []).find(row =>
+    row.id !== contact?.id && (
+      filledEmails.some(email => row.emails.some(item => item.toLowerCase() === email.toLowerCase()))
+      || filledPhones.some(phone => row.phones.some(item => digits(item) === digits(phone)))
+    ),
+  )
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
+    if (clash) return
     const input = {
       name,
-      email,
-      ...(phone.trim() ? { phone: phone.trim() } : {}),
+      emails: filledEmails,
+      phones: filledPhones,
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }
     if (contact) {
@@ -150,6 +164,15 @@ function ContactForm({
     }
   }
 
+  async function onMerge() {
+    if (!contact || !clash) return
+    const saved = await merge.mutateAsync({ keepId: contact.id, dropId: clash.id })
+    setEmails(saved.emails)
+    setPhones(saved.phones)
+    await utils.contacts.list.invalidate()
+    await onSaved(contact.id)
+  }
+
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-lg px-8 py-8">
       <h2 className="text-lg font-semibold">{title}</h2>
@@ -157,14 +180,18 @@ function ContactForm({
         Name
         <input value={name} onChange={e => setName(e.target.value)} required className="mt-1 w-full rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700" />
       </label>
-      <label className="mt-4 block text-xs font-medium text-zinc-500">
-        Email
-        <input value={email} onChange={e => setEmail(e.target.value)} required type="email" className="mt-1 w-full rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700" />
-      </label>
-      <label className="mt-4 block text-xs font-medium text-zinc-500">
-        Phone
-        <input value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700" />
-      </label>
+      <PointFields label="Email" type="email" values={emails} onChange={setEmails} required />
+      <PointFields label="Phone" type="tel" values={phones} onChange={setPhones} />
+      {clash && (
+        <p className="mt-3 flex items-center gap-3 text-xs text-zinc-500">
+          <span>Already on {clash.name}</span>
+          {contact && (
+            <button type="button" onClick={() => { void onMerge() }} disabled={merge.isPending} className="font-medium text-indigo-600 hover:text-indigo-500 disabled:opacity-60">
+              {merge.isPending ? 'Merging…' : 'Merge'}
+            </button>
+          )}
+        </p>
+      )}
       <label className="mt-4 block text-xs font-medium text-zinc-500">
         Notes
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="mt-1 w-full resize-none rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700" />
@@ -207,5 +234,61 @@ function ContactForm({
         </div>
       </div>
     </form>
+  )
+}
+
+function digits(value: string): string {
+  return value.replace(/\D/g, '')
+}
+
+function PointFields({
+  label,
+  type,
+  values,
+  onChange,
+  required,
+}: {
+  label: string
+  type: 'email' | 'tel'
+  values: string[]
+  onChange: (values: string[]) => void
+  required?: boolean
+}) {
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-500">{label}</span>
+        <button
+          type="button"
+          onClick={() => onChange([...values, ''])}
+          className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+        >
+          Add
+        </button>
+      </div>
+      <div className="mt-1 space-y-2">
+        {values.map((value, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              value={value}
+              type={type}
+              required={required && index === 0}
+              onChange={event => onChange(values.map((item, i) => i === index ? event.target.value : item))}
+              className="w-full rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700"
+            />
+            {(values.length > 1 || !required) && (
+              <button
+                type="button"
+                aria-label={`Remove ${label.toLowerCase()}`}
+                onClick={() => onChange(values.filter((_, i) => i !== index))}
+                className="text-sm text-zinc-400 hover:text-zinc-700"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

@@ -1,13 +1,15 @@
 import { TRPCError } from '@trpc/server'
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
   auditLog,
   can,
   channelMembers,
+  channelParties,
   channels,
   chatMessages,
+  contacts,
   users,
 } from '@twork/db'
 import { authed, router } from './trpc.js'
@@ -42,8 +44,8 @@ async function membership(
 }
 
 export const chatRouter = router({
-  list: authed.query(async ({ ctx }) =>
-    ctx.db
+  list: authed.query(async ({ ctx }) => {
+    const rows = await ctx.db
       .select({ id: channels.id, name: channels.name, isDm: channels.isDm })
       .from(channels)
       .innerJoin(channelMembers, and(
@@ -52,8 +54,102 @@ export const chatRouter = router({
         isNull(channelMembers.deletedAt),
       ))
       .where(and(eq(channels.projectId, ctx.session.projectId), isNull(channels.deletedAt)))
-      .orderBy(asc(channels.createdAt)),
-  ),
+      .orderBy(asc(channels.createdAt))
+    const ids = rows.map(row => row.id)
+    const parties = ids.length === 0 ? [] : await ctx.db
+      .select({
+        channelId: channelParties.channelId,
+        contactId: channelParties.contactId,
+        name:      contacts.name,
+      })
+      .from(channelParties)
+      .innerJoin(contacts, eq(contacts.id, channelParties.contactId))
+      .where(and(
+        inArray(channelParties.channelId, ids),
+        isNull(channelParties.deletedAt),
+        isNull(contacts.deletedAt),
+      ))
+      .orderBy(asc(channelParties.id))
+    return rows.map(row => ({
+      ...row,
+      parties: parties
+        .filter(party => party.channelId === row.id)
+        .map(party => ({ id: party.contactId, name: party.name })),
+    }))
+  }),
+
+  open: authed
+    .input(z.object({ contactIds: z.array(z.string().uuid()).min(1).max(8) }))
+    .mutation(async ({ ctx, input }) => {
+      await assertWrite(ctx)
+      const contactIds = [...new Set(input.contactIds)]
+      const people = await ctx.db
+        .select({ id: contacts.id, name: contacts.name })
+        .from(contacts)
+        .where(and(
+          inArray(contacts.id, contactIds),
+          eq(contacts.projectId, ctx.session.projectId),
+          eq(contacts.userId, ctx.session.userId),
+          isNull(contacts.deletedAt),
+        ))
+      if (people.length !== contactIds.length) throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose people from Contacts.' })
+      const ordered = contactIds.map(id => people.find(person => person.id === id)).filter((person): person is { id: string; name: string } => !!person)
+
+      const existing = await ctx.db
+        .select({ channelId: channelParties.channelId, contactId: channelParties.contactId })
+        .from(channelParties)
+        .innerJoin(channels, eq(channels.id, channelParties.channelId))
+        .innerJoin(channelMembers, and(
+          eq(channelMembers.channelId, channels.id),
+          eq(channelMembers.userId, ctx.session.userId),
+          isNull(channelMembers.deletedAt),
+        ))
+        .where(and(
+          eq(channels.projectId, ctx.session.projectId),
+          isNull(channels.deletedAt),
+          isNull(channelParties.deletedAt),
+        ))
+      const byChannel = new Map<string, string[]>()
+      for (const row of existing) {
+        const list = byChannel.get(row.channelId) ?? []
+        list.push(row.contactId)
+        byChannel.set(row.channelId, list)
+      }
+      for (const [channelId, ids] of byChannel) {
+        if (sameIds(ids, contactIds)) return { id: channelId }
+      }
+
+      const id = uuidv7()
+      const now = new Date()
+      await ctx.db.transaction(async tx => {
+        await tx.insert(channels).values({
+          id,
+          projectId: ctx.session.projectId,
+          name:      ordered.map(person => person.name).join(', '),
+          isDm:      false,
+          createdBy: ctx.session.userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await tx.insert(channelMembers).values({
+          id:        uuidv7(),
+          projectId: ctx.session.projectId,
+          channelId: id,
+          userId:    ctx.session.userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await tx.insert(channelParties).values(ordered.map(person => ({
+          id:        uuidv7(),
+          projectId: ctx.session.projectId,
+          channelId: id,
+          contactId: person.id,
+          createdAt: now,
+          updatedAt: now,
+        })))
+      })
+      return { id }
+    }),
 
   ensureDirect: authed.mutation(async ({ ctx }) => {
     await assertWrite(ctx)
@@ -116,6 +212,28 @@ export const chatRouter = router({
     .input(z.object({ name: z.string().trim().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
       await assertWrite(ctx)
+      const [named] = await ctx.db
+        .select({ id: channels.id })
+        .from(channels)
+        .innerJoin(channelMembers, and(
+          eq(channelMembers.channelId, channels.id),
+          eq(channelMembers.userId, ctx.session.userId),
+          isNull(channelMembers.deletedAt),
+        ))
+        .where(and(
+          eq(channels.projectId, ctx.session.projectId),
+          eq(channels.isDm, false),
+          sql`lower(${channels.name}) = ${input.name.toLowerCase()}`,
+          isNull(channels.deletedAt),
+          sql`NOT EXISTS (
+            SELECT 1 FROM channel_parties
+            WHERE channel_parties.channel_id = ${channels.id}
+              AND channel_parties.deleted_at IS NULL
+          )`,
+        ))
+        .limit(1)
+      if (named) return { id: named.id }
+
       const id = uuidv7()
       const now = new Date()
       await ctx.db.transaction(async tx => {
@@ -211,6 +329,12 @@ export const chatRouter = router({
       return { id }
     }),
 })
+
+function sameIds(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const want = new Set(right)
+  return left.every(id => want.has(id))
+}
 
 function isUniqueViolation(err: unknown): boolean {
   let current: unknown = err

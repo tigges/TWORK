@@ -1,18 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { trpc } from '../trpc.js'
 import { useSidebarOpen } from '../components/Shell.js'
+
+type Person = { id: string; name: string; emails: string[] }
 
 export function ChatPage() {
   const sidebarOpen = useSidebarOpen()
   const utils = trpc.useUtils()
   const list = trpc.chat.list.useQuery()
-  const ensure = trpc.chat.ensureDirect.useMutation({
-    onSuccess: async () => { await utils.chat.list.invalidate() },
+  const people = trpc.contacts.list.useQuery({})
+  const field = useRef<HTMLInputElement>(null)
+  const open = trpc.chat.open.useMutation({
+    onSuccess: async (created) => {
+      setPicked([])
+      setToken('')
+      setSelectedId(created.id)
+      setThreadId(null)
+      await utils.chat.list.invalidate()
+    },
   })
   const create = trpc.chat.createRoom.useMutation({
     onSuccess: async (created) => {
-      setNaming(false)
-      setName('')
+      setPicked([])
+      setToken('')
       setSelectedId(created.id)
       setThreadId(null)
       await utils.chat.list.invalidate()
@@ -20,54 +30,95 @@ export function ChatPage() {
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [threadId, setThreadId] = useState<string | null>(null)
-  const [naming, setNaming] = useState(false)
-  const [name, setName] = useState('')
-  const ensured = useRef(false)
+  const [picked, setPicked] = useState<Person[]>([])
+  const [token, setToken] = useState('')
 
-  useEffect(() => {
-    if (!list.data || list.data.some(row => row.isDm) || ensured.current) return
-    ensured.current = true
-    ensure.mutate()
-  }, [list.data, ensure])
-
-  const rooms = [...(list.data ?? [])].sort((a, b) => Number(b.isDm) - Number(a.isDm))
+  const rooms = [...(list.data ?? [])].sort((a, b) => {
+    const peopleFirst = Number(b.parties.length > 0) - Number(a.parties.length > 0)
+    if (peopleFirst !== 0) return peopleFirst
+    return chatTitle(a).localeCompare(chatTitle(b))
+  })
   const selected = rooms.find(row => row.id === selectedId) ?? rooms[0] ?? null
+  const suggestions = suggestionsFor(people.data ?? [], picked, token)
+  const fieldValue = picked.length === 0
+    ? token
+    : token ? `${picked.map(person => person.name).join(', ')}, ${token}` : picked.map(person => person.name).join(', ')
+
+  function onFieldChange(value: string) {
+    const prefix = picked.map(person => person.name).join(', ')
+    if (picked.length === 0) {
+      setToken(value)
+      return
+    }
+    if (value.startsWith(`${prefix}, `)) {
+      setToken(value.slice(prefix.length + 2))
+      return
+    }
+    if (value.startsWith(prefix)) {
+      setToken(value.slice(prefix.length).replace(/^,?\s*/, ''))
+      return
+    }
+    setPicked(current => current.slice(0, -1))
+    setToken('')
+  }
+
+  function addPerson(person: Person) {
+    setPicked(current => current.some(row => row.id === person.id) ? current : [...current, person])
+    setToken('')
+    field.current?.focus()
+  }
+
+  function onFieldKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    const typed = token.trim().toLowerCase()
+    const exact = suggestions.find(person => person.name.toLowerCase() === typed)
+    const match = exact ?? (suggestions.length === 1 ? suggestions[0] : null)
+    if (match && exact) {
+      open.mutate({ contactIds: [...picked.map(person => person.id), match.id] })
+      return
+    }
+    if (match) {
+      addPerson(match)
+      return
+    }
+    if (!typed && picked.length > 0) {
+      open.mutate({ contactIds: picked.map(person => person.id) })
+      return
+    }
+    if (picked.length === 0 && typed) create.mutate({ name: token.trim() })
+  }
 
   return (
     <div className="flex h-full min-h-0">
       <section className="flex w-[240px] shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-        <header className={['flex items-center justify-between gap-3 border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
+        <header className={['border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
           <h1 className="text-sm font-semibold">Chat</h1>
-          <button
-            type="button"
-            onClick={() => setNaming(open => !open)}
-            className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
-          >
-            New room
-          </button>
         </header>
-        {naming && (
-          <form
-            className="flex gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800"
-            onSubmit={event => {
-              event.preventDefault()
-              const trimmed = name.trim()
-              if (!trimmed) return
-              create.mutate({ name: trimmed })
-            }}
-          >
-            <input
-              value={name}
-              onChange={event => setName(event.target.value)}
-              placeholder="Room name"
-              aria-label="Room name"
-              maxLength={80}
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-            />
-            <button type="submit" disabled={create.isPending} className="text-xs font-medium text-indigo-600 disabled:opacity-60">
-              Add
-            </button>
-          </form>
+        <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+          <input
+            ref={field}
+            value={fieldValue}
+            onChange={event => onFieldChange(event.target.value)}
+            onKeyDown={onFieldKeyDown}
+            placeholder="New chat"
+            aria-label="New chat"
+            className="w-full bg-transparent text-sm outline-none"
+          />
+        </div>
+        {suggestions.length > 0 && (
+          <div className="border-b border-zinc-200 dark:border-zinc-800">
+            {suggestions.map(person => (
+              <button
+                key={person.id}
+                type="button"
+                onClick={() => addPerson(person)}
+                className="block w-full px-4 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+              >
+                {person.name}
+              </button>
+            ))}
+          </div>
         )}
         <div className="flex-1 overflow-auto">
           {rooms.map(row => (
@@ -76,22 +127,24 @@ export function ChatPage() {
               type="button"
               onClick={() => { setSelectedId(row.id); setThreadId(null) }}
               className={[
-                'block w-full px-4 py-2.5 text-left text-sm',
+                'block w-full truncate px-4 py-2.5 text-left text-sm',
                 row.id === selected?.id ? 'bg-indigo-50 font-medium dark:bg-indigo-950/40' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60',
               ].join(' ')}
             >
-              {row.isDm ? 'Direct' : row.name}
+              {chatTitle(row)}
             </button>
           ))}
         </div>
-        {create.error && <p className="px-4 py-2 text-xs text-red-600">{create.error.message}</p>}
+        {(open.error || create.error) && (
+          <p className="px-4 py-2 text-xs text-red-600">{open.error?.message || create.error?.message}</p>
+        )}
       </section>
 
       <section className="flex min-w-0 flex-1 flex-col">
         {selected ? (
           <Thread
             channelId={selected.id}
-            title={selected.isDm ? 'Direct' : selected.name}
+            title={chatTitle(selected)}
             parentId={null}
             onOpen={setThreadId}
             activeId={threadId}
@@ -115,6 +168,23 @@ export function ChatPage() {
       )}
     </div>
   )
+}
+
+function chatTitle(row: { name: string; isDm: boolean; parties: { name: string }[] }): string {
+  if (row.parties.length > 0) return row.parties.map(party => party.name).join(', ')
+  return row.isDm ? 'Direct' : row.name
+}
+
+function suggestionsFor(people: Person[], picked: Person[], token: string): Person[] {
+  const q = token.trim().toLowerCase()
+  if (!q) return []
+  return people
+    .filter(person => !picked.some(row => row.id === person.id))
+    .filter(person =>
+      person.name.toLowerCase().includes(q)
+      || person.emails.some(email => email.toLowerCase().includes(q)),
+    )
+    .slice(0, 5)
 }
 
 function Thread({

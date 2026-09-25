@@ -421,6 +421,7 @@ function TimeGrid({
   onFocusDay: (day: Date) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<{ key: string; hour: number } | null>(null)
   useEffect(() => {
     const node = scroller.current
     if (!node) return
@@ -497,6 +498,12 @@ function TimeGrid({
                 key={key}
                 className="relative border-l border-zinc-100 dark:border-zinc-800"
                 style={{ height: 24 * HOUR_PX }}
+                onMouseMove={event => {
+                  const bounds = event.currentTarget.getBoundingClientRect()
+                  const hour = Math.min(23, Math.max(0, Math.floor((event.clientY - bounds.top) / HOUR_PX)))
+                  setHover(current => current?.key === key && current.hour === hour ? current : { key, hour })
+                }}
+                onMouseLeave={() => setHover(current => current?.key === key ? null : current)}
                 onClick={event => {
                   const bounds = event.currentTarget.getBoundingClientRect()
                   const hour = Math.min(23, Math.max(0, Math.floor((event.clientY - bounds.top) / HOUR_PX)))
@@ -506,6 +513,12 @@ function TimeGrid({
                 {hours.map(hour => (
                   <div key={hour} className="border-b border-zinc-100 dark:border-zinc-800/80" style={{ height: HOUR_PX }} />
                 ))}
+                {hover?.key === key && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bg-indigo-50/80 dark:bg-indigo-950/50"
+                    style={{ top: hover.hour * HOUR_PX, height: HOUR_PX }}
+                  />
+                )}
                 {placed.map(({ row, start, end, col, colCount }) => (
                   <button
                     key={`${row.eventId}:${row.occurrenceStartUtc}`}

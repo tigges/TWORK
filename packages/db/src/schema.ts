@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
@@ -188,6 +189,8 @@ export const contacts = pgTable('contacts', {
   name:      text('name').notNull(),
   email:     text('email').notNull(),
   phone:     text('phone'),
+  emails:    text('emails').array().notNull().default([]),
+  phones:    text('phones').array().notNull().default([]),
   notes:     text('notes'),
 }, t => ([
   index('contacts_owner_idx').on(t.projectId, t.userId),
@@ -249,6 +252,15 @@ export const channels = pgTable('channels', {
   isDm:      boolean('is_dm').notNull().default(false),
   createdBy: uuid('created_by').notNull().references(() => users.id),
 })
+
+export const channelParties = pgTable('channel_parties', {
+  ...base,
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  channelId: uuid('channel_id').notNull().references(() => channels.id),
+  contactId: uuid('contact_id').notNull().references(() => contacts.id),
+}, t => ([
+  uniqueIndex('channel_parties_pair_idx').on(t.channelId, t.contactId).where(sql`${t.deletedAt} IS NULL`),
+]))
 
 export const channelMembers = pgTable('channel_members', {
   ...base,

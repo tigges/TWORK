@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server'
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
@@ -7,6 +7,7 @@ import {
   blobs,
   can,
   canBatch,
+  channelParties,
   contacts,
   files as filesTable,
   mailMessages,
@@ -17,6 +18,7 @@ import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
 import { cleanFileName } from './file-name.js'
 import { siblingNameTaken } from './files-shared.js'
 import { saveDraftMessage, storeRawMessage } from './mail-store.js'
+import { uniqueEmails, uniquePhones } from './contact-values.js'
 import { notesRouter } from './notes-router.js'
 import { chatRouter } from './chat-router.js'
 import { calendarRouter } from './calendar-router.js'
@@ -575,10 +577,10 @@ function sameLabels(current: string[], next: string[]): boolean {
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
 const contactInput = z.object({
-  name:  z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(320),
-  phone: z.string().trim().max(40).optional(),
-  notes: z.string().trim().max(4000).optional(),
+  name:   z.string().trim().min(1).max(200),
+  emails: z.array(z.string().trim().email().max(320)).min(1).max(8),
+  phones: z.array(z.string().trim().max(40)).max(8).default([]),
+  notes:  z.string().trim().max(4000).optional(),
 })
 
 const contactsRouter = router({
@@ -595,7 +597,12 @@ const contactsRouter = router({
           eq(contacts.userId, ctx.session.userId),
           isNull(contacts.deletedAt),
           q
-            ? sql`(lower(${contacts.name}) like ${needle} OR lower(${contacts.email}) like ${needle})`
+            ? sql`(
+                lower(${contacts.name}) like ${needle}
+                OR lower(${contacts.email}) like ${needle}
+                OR EXISTS (SELECT 1 FROM unnest(${contacts.emails}) AS e WHERE lower(e) like ${needle})
+                OR EXISTS (SELECT 1 FROM unnest(${contacts.phones}) AS p WHERE lower(p) like ${needle})
+              )`
             : undefined,
         ))
         .orderBy(asc(contacts.name))
@@ -607,31 +614,18 @@ const contactsRouter = router({
         rows.map(row => ({ type: 'contact', id: row.id, projectId: ctx.session.projectId })),
         ctx.db,
       )
-      return rows.filter(row => access.get(row.id)).map(row => ({
-        id:    row.id,
-        name:  row.name,
-        email: row.email,
-        phone: row.phone,
-        notes: row.notes,
-      }))
+      return rows.filter(row => access.get(row.id)).map(presentContact)
     }),
 
   create: authed
     .input(contactInput)
     .mutation(async ({ ctx, input }) => {
       await assertProjectWrite(ctx)
-      const email = input.email.toLowerCase()
-      const [existing] = await ctx.db
-        .select({ id: contacts.id })
-        .from(contacts)
-        .where(and(
-          eq(contacts.projectId, ctx.session.projectId),
-          eq(contacts.userId, ctx.session.userId),
-          sql`lower(${contacts.email}) = ${email}`,
-          isNull(contacts.deletedAt),
-        ))
-        .limit(1)
-      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'That email is already in Contacts.' })
+      const emails = uniqueEmails(input.emails)
+      const phones = uniquePhones(input.phones)
+      if (emails.length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Add an email.' })
+      const other = await findContactClash(ctx, emails, phones)
+      if (other) throw new TRPCError({ code: 'CONFLICT', message: `Already on ${other.name}` })
 
       const id = uuidv7()
       await ctx.db.transaction(async tx => {
@@ -640,8 +634,10 @@ const contactsRouter = router({
           projectId: ctx.session.projectId,
           userId:    ctx.session.userId,
           name:      input.name,
-          email,
-          phone:     input.phone || null,
+          email:     emails[0] ?? '',
+          phone:     phones[0] ?? null,
+          emails,
+          phones,
           notes:     input.notes || null,
         })
         await tx.insert(auditLog).values({
@@ -651,7 +647,7 @@ const contactsRouter = router({
           action:     'contact.create',
           objectType: 'contact',
           objectId:   id,
-          after:      { name: input.name, email },
+          after:      { name: input.name, emails },
         })
       })
       return { id }
@@ -661,25 +657,19 @@ const contactsRouter = router({
     .input(contactInput.extend({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await loadContact(ctx, input.id)
-      const email = input.email.toLowerCase()
-      const [existing] = await ctx.db
-        .select({ id: contacts.id })
-        .from(contacts)
-        .where(and(
-          eq(contacts.projectId, ctx.session.projectId),
-          eq(contacts.userId, ctx.session.userId),
-          sql`lower(${contacts.email}) = ${email}`,
-          isNull(contacts.deletedAt),
-          ne(contacts.id, row.id),
-        ))
-        .limit(1)
-      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'That email is already in Contacts.' })
+      const emails = uniqueEmails(input.emails)
+      const phones = uniquePhones(input.phones)
+      if (emails.length === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Add an email.' })
+      const other = await findContactClash(ctx, emails, phones, row.id)
+      if (other) throw new TRPCError({ code: 'CONFLICT', message: `Already on ${other.name}` })
 
       await ctx.db.transaction(async tx => {
         await tx.update(contacts).set({
           name:      input.name,
-          email,
-          phone:     input.phone || null,
+          email:     emails[0] ?? '',
+          phone:     phones[0] ?? null,
+          emails,
+          phones,
           notes:     input.notes || null,
           updatedAt: new Date(),
         }).where(eq(contacts.id, row.id))
@@ -690,11 +680,69 @@ const contactsRouter = router({
           action:     'contact.update',
           objectType: 'contact',
           objectId:   row.id,
-          before:     { name: row.name, email: row.email },
-          after:      { name: input.name, email },
+          before:     { name: row.name, emails: row.emails },
+          after:      { name: input.name, emails },
         })
       })
       return { id: row.id }
+    }),
+
+  merge: authed
+    .input(z.object({
+      keepId: z.string().uuid(),
+      dropId: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.keepId === input.dropId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Choose two cards.' })
+      const keep = await loadContact(ctx, input.keepId)
+      const drop = await loadContact(ctx, input.dropId)
+      const emails = uniqueEmails([...(keep.emails.length ? keep.emails : [keep.email]), ...(drop.emails.length ? drop.emails : [drop.email])])
+      const phones = uniquePhones([...(keep.phones.length ? keep.phones : keep.phone ? [keep.phone] : []), ...(drop.phones.length ? drop.phones : drop.phone ? [drop.phone] : [])])
+      const notes = [keep.notes, drop.notes].map(note => note?.trim()).filter((note): note is string => !!note)
+      const mergedNotes = [...new Set(notes)].join('\n') || null
+      const now = new Date()
+      await ctx.db.transaction(async tx => {
+        const parties = await tx
+          .select({ id: channelParties.id, channelId: channelParties.channelId })
+          .from(channelParties)
+          .where(and(eq(channelParties.contactId, drop.id), isNull(channelParties.deletedAt)))
+        for (const party of parties) {
+          const [held] = await tx
+            .select({ id: channelParties.id })
+            .from(channelParties)
+            .where(and(
+              eq(channelParties.channelId, party.channelId),
+              eq(channelParties.contactId, keep.id),
+              isNull(channelParties.deletedAt),
+            ))
+            .limit(1)
+          if (held) {
+            await tx.update(channelParties).set({ deletedAt: now, updatedAt: now }).where(eq(channelParties.id, party.id))
+          } else {
+            await tx.update(channelParties).set({ contactId: keep.id, updatedAt: now }).where(eq(channelParties.id, party.id))
+          }
+        }
+        await tx.update(contacts).set({
+          email:     emails[0] ?? keep.email,
+          phone:     phones[0] ?? null,
+          emails,
+          phones,
+          notes:     mergedNotes,
+          updatedAt: now,
+        }).where(eq(contacts.id, keep.id))
+        await tx.update(contacts).set({ deletedAt: now, updatedAt: now }).where(eq(contacts.id, drop.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'contact.merge',
+          objectType: 'contact',
+          objectId:   keep.id,
+          before:     { dropId: drop.id, name: drop.name },
+          after:      { emails, phones },
+        })
+      })
+      return { id: keep.id, emails, phones }
     }),
 
   remove: authed
@@ -717,6 +765,59 @@ const contactsRouter = router({
       return { ok: true }
     }),
 })
+
+function presentContact(row: {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+  emails: string[]
+  phones: string[]
+  notes: string | null
+}) {
+  const emails = uniqueEmails(row.emails.length > 0 ? row.emails : [row.email])
+  const phones = uniquePhones(row.phones.length > 0 ? row.phones : row.phone ? [row.phone] : [])
+  return {
+    id:     row.id,
+    name:   row.name,
+    email:  emails[0] ?? row.email,
+    phone:  phones[0] ?? null,
+    emails,
+    phones,
+    notes:  row.notes,
+  }
+}
+
+async function findContactClash(
+  ctx: { session: { userId: string; projectId: string }; db: Parameters<typeof can>[3] },
+  emails: string[],
+  phones: string[],
+  exceptId?: string,
+) {
+  const rows = await ctx.db
+    .select({
+      id:     contacts.id,
+      name:   contacts.name,
+      email:  contacts.email,
+      phone:  contacts.phone,
+      emails: contacts.emails,
+      phones: contacts.phones,
+    })
+    .from(contacts)
+    .where(and(
+      eq(contacts.projectId, ctx.session.projectId),
+      eq(contacts.userId, ctx.session.userId),
+      isNull(contacts.deletedAt),
+    ))
+    .limit(500)
+  for (const row of rows) {
+    if (row.id === exceptId) continue
+    const card = presentContact({ ...row, notes: null })
+    if (emails.some(email => card.emails.includes(email))) return { id: row.id, name: row.name }
+    if (phones.some(phone => card.phones.includes(phone))) return { id: row.id, name: row.name }
+  }
+  return null
+}
 
 async function assertProjectWrite(ctx: { session: { userId: string; projectId: string }; db: Parameters<typeof can>[3] }) {
   const allowed = await can(ctx.session.userId, 'write', {
