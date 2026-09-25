@@ -2,17 +2,17 @@ export type Aim = 'up' | 'down' | 'far' | 'left' | 'right'
 export type DownAction = 'archive' | 'delete'
 
 export const HOLD_MS = 200
-export const CANCEL_PX = 10
-export const DEAD_PX = 16
+export const CANCEL_PX = 18
+export const DEAD_PX = 28
 
 /** Arrow geometry, in px, shared by the overlay and the aim zones. */
 export const HOLD = {
-  inner:  22,
-  body:   20,
-  tip:    8,
-  half:   20,
-  circle: 34,
-  gap:    12,
+  inner:  64,
+  body:   48,
+  tip:    22,
+  half:   52,
+  circle: 92,
+  gap:    22,
 } as const
 
 const TIP_R = HOLD.inner + HOLD.body + HOLD.tip
