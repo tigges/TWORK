@@ -206,8 +206,9 @@ function HoldOverlay({ overlay, nearDown }: { overlay: Overlay; nearDown: DownAc
     { aim: 'down', action: nearDown, label: nearDown === 'archive' ? 'Archive' : 'Delete', at: BODY_MID },
     { aim: 'far', action: far, label: far === 'archive' ? 'Archive' : 'Delete', at: FAR_INNER + HOLD.body / 2 },
   ]
-  const pad = 90
-  const height = FAR_INNER + HOLD.body + HOLD.tip + 28
+  const reach = HOLD.inner + HOLD.body + HOLD.tip
+  const pad = reach + 16
+  const height = FAR_INNER + HOLD.body + HOLD.tip + 16
   return (
     <svg
       data-hold="open"
@@ -227,8 +228,8 @@ function HoldOverlay({ overlay, nearDown }: { overlay: Overlay; nearDown: DownAc
         </radialGradient>
       </defs>
       <circle r={HOLD.circle} fill="url(#mail-hold-glow)" />
-      <circle r={HOLD.circle} fill="none" stroke="#ffffff" strokeOpacity="0.7" strokeWidth="8" />
-      <circle r={HOLD.circle} fill="none" stroke="#3f3f46" strokeOpacity="0.28" strokeWidth="8" />
+      <circle r={HOLD.circle} fill="none" stroke="#ffffff" strokeOpacity="0.7" strokeWidth="16" />
+      <circle r={HOLD.circle} fill="none" stroke="#3f3f46" strokeOpacity="0.28" strokeWidth="16" />
       {arms.map(arm => (
         <Arm key={arm.aim} arm={arm} lit={overlay.aim === arm.aim} />
       ))}
@@ -267,7 +268,7 @@ function Arm({
         transform={transform}
         fill={COLORS[arm.action]}
         stroke={lit ? '#ffffff' : 'none'}
-        strokeWidth={lit ? 2 : 0}
+        strokeWidth={lit ? 4 : 0}
       />
       <text
         x={text.x}
@@ -275,7 +276,7 @@ function Arm({
         textAnchor="middle"
         dominantBaseline="central"
         fill="#ffffff"
-        fontSize={long ? 9 : 11}
+        fontSize={long ? 18 : 22}
         fontWeight={600}
         fontFamily="ui-sans-serif, system-ui, sans-serif"
       >

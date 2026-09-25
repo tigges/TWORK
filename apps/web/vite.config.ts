@@ -46,6 +46,7 @@ export default defineConfig({
       '/auth/passkey':   { target: 'http://localhost:3001' },
       '/files/upload':   { target: 'http://localhost:3001' },
       '/files/download': { target: 'http://localhost:3001' },
+      '/mail/files':     { target: 'http://localhost:3001' },
     },
   },
 })
