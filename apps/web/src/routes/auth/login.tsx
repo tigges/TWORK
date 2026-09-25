@@ -3,6 +3,7 @@ import { Fingerprint } from 'lucide-react'
 import { useState } from 'react'
 import { loginWithPasskey } from '../../lib/auth.js'
 import { useAuth } from '../../main.js'
+import { appVersion } from '../../version.js'
 
 export function LoginPage() {
   const [error,    setError]    = useState<string | null>(null)
@@ -59,6 +60,9 @@ export function LoginPage() {
           <a href="/auth/setup" className="text-indigo-500 hover:text-indigo-400 underline underline-offset-2">
             Register one
           </a>
+        </p>
+        <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-600" title={`Version ${appVersion}`}>
+          {appVersion}
         </p>
       </div>
     </div>

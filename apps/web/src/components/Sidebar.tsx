@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../lib/theme.js'
 import { logout } from '../lib/auth.js'
+import { appVersion } from '../version.js'
 
 interface NavItem {
   to:    string
@@ -43,8 +44,11 @@ export function Sidebar({ user }: { user: { displayName: string; email: string }
   return (
     <aside className="flex flex-col items-center gap-1 h-screen py-3 bg-zinc-950 dark:bg-zinc-950 text-zinc-400 w-14 shrink-0">
       {/* Logo */}
-      <div className="mb-3 flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold text-sm select-none">
+      <div className="mb-1 flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold text-sm select-none">
         TW
+      </div>
+      <div className="mb-2 text-[10px] font-medium leading-none text-zinc-500" title={`Version ${appVersion}`}>
+        {appVersion}
       </div>
 
       {/* Search shortcut */}
