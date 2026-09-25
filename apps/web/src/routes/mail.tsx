@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
-import { Mail, PenLine, UserPlus, X } from 'lucide-react'
+import { Mail, PenLine, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
@@ -56,14 +56,26 @@ export function MailPage() {
             <h1 className="text-sm font-semibold">Mail</h1>
             <p className="truncate text-xs text-zinc-500">{address.data?.address ?? ' '}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => { setReplyTo(null); setComposing(true) }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
-          >
-            <PenLine size={14} />
-            Compose
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              title="Reload"
+              aria-label="Reload mail"
+              onClick={() => { void list.refetch() }}
+              disabled={list.isRefetching}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-60 dark:hover:bg-zinc-800"
+            >
+              <RefreshCw size={14} className={list.isRefetching ? 'animate-spin' : ''} />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setReplyTo(null); setComposing(true) }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+            >
+              <PenLine size={14} />
+              Compose
+            </button>
+          </div>
         </header>
         <div className="flex gap-1.5 overflow-x-auto border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <FilterChip active={box === 'inbox'} onClick={() => { setBox('inbox'); setSelectedId(null); setLabelFilter(null) }}>Inbox</FilterChip>
