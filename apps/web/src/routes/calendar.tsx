@@ -47,7 +47,7 @@ const PRESETS = [
 export function CalendarPage() {
   const sidebarOpen = useSidebarOpen()
   const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', [])
-  const [view, setView] = useState<View>('month')
+  const [view, setView] = useState<View>('week')
   const [focus, setFocus] = useState(() => startOfDay(new Date()))
   const [panel, setPanel] = useState<Panel | null>(null)
   const range = useMemo(() => visibleRange(view, focus), [view, focus])
@@ -69,9 +69,9 @@ export function CalendarPage() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <header className={['flex items-center justify-between gap-3 border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
-        <div className="flex items-center gap-2">
-          <h1 className="min-w-44 text-sm font-semibold">{rangeTitle(view, focus)}</h1>
+      <header className={['flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-zinc-200 py-3 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="min-w-0 text-sm font-semibold">{rangeTitle(view, focus)}</h1>
           <button type="button" onClick={() => setFocus(stepFocus(view, focus, -1))} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Previous">
             <ChevronLeft size={16} />
           </button>
@@ -85,7 +85,7 @@ export function CalendarPage() {
           >
             Today
           </button>
-          <div className="ml-1 flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700">
+          <div className="ml-1 flex shrink-0 rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700">
             {(['month', 'week', 'day'] as const).map(id => (
               <button
                 key={id}
