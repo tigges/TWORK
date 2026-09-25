@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server'
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
@@ -12,6 +12,7 @@ import {
   files as filesTable,
   mailMessages,
   searchIndex,
+  shares,
 } from '@twork/db'
 import { mailboxAddress } from './mailbox.js'
 import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
@@ -22,6 +23,9 @@ import { uniqueEmails, uniquePhones } from './contact-values.js'
 import { notesRouter } from './notes-router.js'
 import { chatRouter } from './chat-router.js'
 import { calendarRouter } from './calendar-router.js'
+import { shareRouter } from './share-router.js'
+import { tasksRouter } from './tasks-router.js'
+import { objectIdsSharedWith } from './shares.js'
 import { authed, router } from './trpc.js'
 
 // ── Files ─────────────────────────────────────────────────────────────────────
@@ -51,16 +55,47 @@ const filesRouter = router({
           isNull(filesTable.deletedAt),
         ))
         .orderBy(desc(filesTable.isFolder), asc(filesTable.name))
+      const sharedIds = await objectIdsSharedWith(ctx.db, ctx.session.projectId, ctx.user.email, 'file')
       const access = await canBatch(
         ctx.session.userId,
         'read',
         rows.map(row => ({ type: 'file', id: row.id, projectId: ctx.session.projectId })),
         ctx.db,
       )
-      return {
-        crumbs,
-        rows: rows.filter(row => access.get(row.id)),
+      const visible = rows.filter(row => access.get(row.id) || sharedIds.includes(row.id))
+      if (!input.parentId && sharedIds.length > 0) {
+        const missing = sharedIds.filter(id => !visible.some(row => row.id === id))
+        if (missing.length > 0) {
+          const extraAccess = await canBatch(
+            ctx.session.userId,
+            'read',
+            missing.map(id => ({ type: 'file', id, projectId: ctx.session.projectId })),
+            ctx.db,
+          )
+          const hidden = missing.filter(id => !extraAccess.get(id))
+          if (hidden.length > 0) {
+            const extra = await ctx.db
+              .select({
+                id:          filesTable.id,
+                name:        filesTable.name,
+                isFolder:    filesTable.isFolder,
+                updatedAt:   filesTable.updatedAt,
+                sizeBytes:   blobs.sizeBytes,
+                contentType: blobs.contentType,
+              })
+              .from(filesTable)
+              .leftJoin(blobs, eq(blobs.id, filesTable.blobId))
+              .where(and(
+                eq(filesTable.projectId, ctx.session.projectId),
+                inArray(filesTable.id, hidden),
+                isNull(filesTable.deletedAt),
+              ))
+            visible.push(...extra)
+          }
+        }
       }
+      visible.sort((a, b) => Number(b.isFolder) - Number(a.isFolder) || a.name.localeCompare(b.name))
+      return { crumbs, rows: visible }
     }),
 
   mkdir: authed
@@ -589,6 +624,14 @@ const contactsRouter = router({
     .query(async ({ ctx, input }) => {
       const q = input?.q?.trim().toLowerCase() ?? ''
       const needle = `%${q.replace(/[%_]/g, '')}%`
+      const match = q
+        ? sql`(
+            lower(${contacts.name}) like ${needle}
+            OR lower(${contacts.email}) like ${needle}
+            OR EXISTS (SELECT 1 FROM unnest(${contacts.emails}) AS e WHERE lower(e) like ${needle})
+            OR EXISTS (SELECT 1 FROM unnest(${contacts.phones}) AS p WHERE lower(p) like ${needle})
+          )`
+        : undefined
       const rows = await ctx.db
         .select()
         .from(contacts)
@@ -596,14 +639,7 @@ const contactsRouter = router({
           eq(contacts.projectId, ctx.session.projectId),
           eq(contacts.userId, ctx.session.userId),
           isNull(contacts.deletedAt),
-          q
-            ? sql`(
-                lower(${contacts.name}) like ${needle}
-                OR lower(${contacts.email}) like ${needle}
-                OR EXISTS (SELECT 1 FROM unnest(${contacts.emails}) AS e WHERE lower(e) like ${needle})
-                OR EXISTS (SELECT 1 FROM unnest(${contacts.phones}) AS p WHERE lower(p) like ${needle})
-              )`
-            : undefined,
+          match,
         ))
         .orderBy(asc(contacts.name))
         .limit(500)
@@ -614,7 +650,23 @@ const contactsRouter = router({
         rows.map(row => ({ type: 'contact', id: row.id, projectId: ctx.session.projectId })),
         ctx.db,
       )
-      return rows.filter(row => access.get(row.id)).map(presentContact)
+      const sharedIds = (await objectIdsSharedWith(ctx.db, ctx.session.projectId, ctx.user.email, 'contact'))
+        .filter(id => !rows.some(row => row.id === id))
+      const shared = sharedIds.length === 0
+        ? []
+        : await ctx.db
+          .select()
+          .from(contacts)
+          .where(and(
+            eq(contacts.projectId, ctx.session.projectId),
+            inArray(contacts.id, sharedIds),
+            isNull(contacts.deletedAt),
+            match,
+          ))
+      return [
+        ...rows.filter(row => access.get(row.id)).map(row => ({ ...presentContact(row), mine: true })),
+        ...shared.map(row => ({ ...presentContact(row), mine: false })),
+      ].sort((a, b) => a.name.localeCompare(b.name))
     }),
 
   create: authed
@@ -730,6 +782,7 @@ const contactsRouter = router({
           notes:     mergedNotes,
           updatedAt: now,
         }).where(eq(contacts.id, keep.id))
+        await reassignShares(tx as Parameters<typeof can>[3], drop.id, keep.id, now)
         await tx.update(contacts).set({ deletedAt: now, updatedAt: now }).where(eq(contacts.id, drop.id))
         await tx.insert(auditLog).values({
           id:         uuidv7(),
@@ -785,6 +838,64 @@ function presentContact(row: {
     emails,
     phones,
     notes:  row.notes,
+  }
+}
+
+async function reassignShares(
+  db: Parameters<typeof can>[3],
+  dropId: string,
+  keepId: string,
+  now: Date,
+) {
+  const asRecipient = await db
+    .select({ id: shares.id, objectType: shares.objectType, objectId: shares.objectId })
+    .from(shares)
+    .where(and(eq(shares.contactId, dropId), isNull(shares.deletedAt)))
+  for (const row of asRecipient) {
+    const [held] = await db
+      .select({ id: shares.id })
+      .from(shares)
+      .where(and(
+        eq(shares.objectType, row.objectType),
+        eq(shares.objectId, row.objectId),
+        eq(shares.contactId, keepId),
+        isNull(shares.deletedAt),
+      ))
+      .limit(1)
+    if (held) {
+      await db.update(shares).set({ deletedAt: now, updatedAt: now }).where(eq(shares.id, row.id))
+    } else {
+      await db.update(shares).set({ contactId: keepId, updatedAt: now }).where(eq(shares.id, row.id))
+    }
+  }
+  const asObject = await db
+    .select({ id: shares.id, contactId: shares.contactId })
+    .from(shares)
+    .where(and(
+      eq(shares.objectType, 'contact'),
+      eq(shares.objectId, dropId),
+      isNull(shares.deletedAt),
+    ))
+  for (const row of asObject) {
+    if (row.contactId === keepId) {
+      await db.update(shares).set({ deletedAt: now, updatedAt: now }).where(eq(shares.id, row.id))
+      continue
+    }
+    const [held] = await db
+      .select({ id: shares.id })
+      .from(shares)
+      .where(and(
+        eq(shares.objectType, 'contact'),
+        eq(shares.objectId, keepId),
+        eq(shares.contactId, row.contactId),
+        isNull(shares.deletedAt),
+      ))
+      .limit(1)
+    if (held) {
+      await db.update(shares).set({ deletedAt: now, updatedAt: now }).where(eq(shares.id, row.id))
+    } else {
+      await db.update(shares).set({ objectId: keepId, updatedAt: now }).where(eq(shares.id, row.id))
+    }
   }
 }
 
@@ -878,6 +989,8 @@ export const appRouter = router({
   contacts: contactsRouter,
   calendar: calendarRouter,
   chat:     chatRouter,
+  share:    shareRouter,
+  tasks:    tasksRouter,
   search:   searchRouter,
 })
 

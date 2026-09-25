@@ -85,15 +85,11 @@ export function MailPage() {
           {box !== 'sent' && (
             <FilterChip active={box === 'spam'} onClick={() => { setBox('spam'); setSelectedId(null); setLabelFilter(null) }}>Spam</FilterChip>
           )}
-          {knownLabels.map(label => (
-            <FilterChip
-              key={label.toLowerCase()}
-              active={activeFilter?.toLowerCase() === label.toLowerCase()}
-              onClick={() => setLabelFilter(label)}
-            >
-              {label}
-            </FilterChip>
-          ))}
+          <LabelFilter
+            labels={knownLabels}
+            active={activeFilter}
+            onPick={setLabelFilter}
+          />
         </div>
         <div className="flex-1 overflow-auto">
           {list.isLoading && <p className="px-4 py-6 text-sm text-zinc-500">Loading…</p>}
@@ -592,6 +588,73 @@ function ContactMatches({
         </li>
       ))}
     </ul>
+  )
+}
+
+function LabelFilter({
+  labels,
+  active,
+  onPick,
+}: {
+  labels: string[]
+  active: string | null
+  onPick: (label: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onDoc(event: MouseEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  if (labels.length === 0) return null
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        className={[
+          'rounded-full px-2.5 py-0.5 text-xs font-medium',
+          active
+            ? 'bg-indigo-600 text-white'
+            : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+        ].join(' ')}
+      >
+        {active ?? 'Filter'}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 min-w-[9rem] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {active && (
+            <button
+              type="button"
+              onClick={() => { onPick(null); setOpen(false) }}
+              className="block w-full px-3 py-1.5 text-left text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            >
+              Off
+            </button>
+          )}
+          {labels.map(label => {
+            const on = active?.toLowerCase() === label.toLowerCase()
+            return (
+              <button
+                key={label.toLowerCase()}
+                type="button"
+                onClick={() => { onPick(on ? null : label); setOpen(false) }}
+                className={[
+                  'block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                  on ? 'font-medium text-indigo-600' : 'text-zinc-700 dark:text-zinc-200',
+                ].join(' ')}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
