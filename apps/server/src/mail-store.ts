@@ -95,6 +95,7 @@ export async function saveDraftMessage(
     bcc:         string[]
     subject:     string
     text:        string
+    files?:      { name: string; type: string; data: Buffer }[]
   },
 ): Promise<string> {
   const raw = buildRfc5322({
@@ -105,6 +106,7 @@ export async function saveDraftMessage(
     bcc:         input.bcc,
     subject:     input.subject,
     text:        input.text,
+    ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
   })
 
   if (!input.id) {

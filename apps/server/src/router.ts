@@ -12,13 +12,15 @@ import {
   contacts,
   files as filesTable,
   mailMessages,
+  readMessageFiles,
   searchIndex,
   shares,
 } from '@twork/db'
 import { mailboxAddress } from './mailbox.js'
-import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
+import { AttachmentError, buildRfc5322, deliverMail, filesFromPayload, outboundConfigured } from './mail-send.js'
 import { cleanFileName } from './file-name.js'
 import { siblingNameTaken } from './files-shared.js'
+import { readStoredBlob } from './blob-store.js'
 import { saveDraftMessage, storeRawMessage } from './mail-store.js'
 import { uniqueEmails, uniquePhones } from './contact-values.js'
 import { notesRouter } from './notes-router.js'
@@ -293,6 +295,12 @@ function addressListInput(label: string) {
   })
 }
 
+const attachmentInput = z.array(z.object({
+  name: z.string().trim().min(1).max(180),
+  type: z.string().trim().max(120).default('application/octet-stream'),
+  data: z.string().min(1).max(12_000_000),
+})).max(8).default([])
+
 const mailRouter = router({
   address: authed.query(({ ctx }) => ({
     address: mailboxAddress(ctx.user.email),
@@ -371,7 +379,35 @@ const mailRouter = router({
         labels:       row.labels,
         textBody:     row.textBody,
         messageIdHdr: row.messageIdHdr,
+        attachments:  await attachmentSummary(ctx.db, ctx.storage, row.rawBlobId),
       }
+    }),
+
+  files: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .select({ id: mailMessages.id, rawBlobId: mailMessages.rawBlobId })
+        .from(mailMessages)
+        .where(and(
+          eq(mailMessages.id, input.id),
+          eq(mailMessages.projectId, ctx.session.projectId),
+          isNull(mailMessages.deletedAt),
+        ))
+        .limit(1)
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+      const allowed = await can(ctx.session.userId, 'read', {
+        type: 'mail', id: row.id, projectId: ctx.session.projectId,
+      }, ctx.db)
+      if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+      const raw = await readStoredBlob(ctx.db, ctx.storage, row.rawBlobId)
+      if (!raw) return []
+      const files = await readMessageFiles(raw)
+      return files.map(file => ({
+        name: file.name,
+        type: file.type,
+        data: file.data.toString('base64'),
+      }))
     }),
 
   setLabels: authed
@@ -444,8 +480,9 @@ const mailRouter = router({
       to:      z.string().trim().max(320).default(''),
       cc:      addressListInput('Cc'),
       bcc:     addressListInput('Bcc'),
-      subject: z.string().max(998).default(''),
-      text:    z.string().max(200_000).default(''),
+      subject:     z.string().max(998).default(''),
+      text:        z.string().max(200_000).default(''),
+      attachments: attachmentInput,
     }))
     .mutation(async ({ ctx, input }) => {
       const allowed = await can(ctx.session.userId, 'write', {
@@ -466,6 +503,7 @@ const mailRouter = router({
           bcc:         input.bcc,
           subject:     input.subject,
           text:        input.text,
+          files:       takenFiles(input.attachments),
           ...(input.id ? { id: input.id } : {}),
         })
         return { id }
@@ -568,8 +606,9 @@ const mailRouter = router({
       bcc:        addressListInput('Bcc'),
       subject:    z.string().min(1).max(998),
       text:       z.string().min(1).max(200_000),
-      inReplyTo:  z.string().min(1).optional(),
-      draftId:    z.string().uuid().optional(),
+      inReplyTo:   z.string().min(1).optional(),
+      draftId:     z.string().uuid().optional(),
+      attachments: attachmentInput,
     }))
     .mutation(async ({ ctx, input }) => {
       const allowed = await can(ctx.session.userId, 'write', {
@@ -590,6 +629,7 @@ const mailRouter = router({
       const bcc = input.bcc.filter(addr => addr !== toKey && !ccKeys.has(addr))
 
       const fromAddress = mailboxAddress(ctx.user.email)
+      const files = takenFiles(input.attachments)
       const raw = buildRfc5322({
         fromName:    ctx.user.displayName,
         fromAddress,
@@ -599,6 +639,7 @@ const mailRouter = router({
         subject:     input.subject,
         text:        input.text,
         ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
+        ...(files.length > 0 ? { files } : {}),
       })
       const id = await storeRawMessage(ctx.db, ctx.storage, {
         projectId: ctx.session.projectId,
@@ -615,6 +656,7 @@ const mailRouter = router({
           bcc,
           subject:     input.subject,
           text:        input.text,
+          ...(files.length > 0 ? { files } : {}),
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'send failed'
@@ -634,6 +676,32 @@ const mailRouter = router({
       return { id }
     }),
 })
+
+function takenFiles(files: { name: string; type: string; data: string }[]) {
+  try {
+    return filesFromPayload(files)
+  } catch (err) {
+    if (err instanceof AttachmentError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message })
+    }
+    throw err
+  }
+}
+
+async function attachmentSummary(
+  db: DB,
+  storage: Parameters<typeof readStoredBlob>[1],
+  blobId: string,
+) {
+  try {
+    const raw = await readStoredBlob(db, storage, blobId)
+    if (!raw) return []
+    const files = await readMessageFiles(raw)
+    return files.map(file => ({ name: file.name, type: file.type, size: file.data.length }))
+  } catch {
+    return []
+  }
+}
 
 async function ownMail(
   db: DB,

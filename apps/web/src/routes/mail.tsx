@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
-import { Mail, PenLine, RefreshCw, UserPlus, X } from 'lucide-react'
+import { Mail, Paperclip, PenLine, RefreshCw, UserPlus, X } from 'lucide-react'
 import { MailRow, type HoldCommit } from '../components/MailHold.js'
 import { useSidebarOpen } from '../components/Shell.js'
 import { type DownAction } from '../lib/mail-hold.js'
@@ -366,6 +366,13 @@ function MessageView({
       </header>
       <div className="flex-1 overflow-auto px-8 py-6">
         <pre className="whitespace-pre-wrap font-sans text-sm leading-6">{row.textBody || ''}</pre>
+        {row.attachments.length > 0 && (
+          <div className="mt-6 flex flex-col gap-4">
+            {row.attachments.map((file, index) => (
+              <MailFile key={`${file.name}-${index}`} id={row.id} file={file} index={index} />
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )
@@ -411,6 +418,14 @@ function Compose({
   const [formError, setFormError] = useState('')
   const [ready, setReady] = useState(!replyToId && !forwardId && !draftId)
   const [savedId, setSavedId] = useState<string | null>(draftId)
+  const [files, setFiles] = useState<AttachedFile[]>([])
+  const fileInput = useRef<HTMLInputElement>(null)
+  const loadedFiles = useRef(false)
+  const sourceId = forwardId ?? draftId
+  const attached = trpc.mail.files.useQuery(
+    { id: sourceId ?? '00000000-0000-0000-0000-000000000000' },
+    { enabled: !!sourceId },
+  )
 
   useEffect(() => {
     if (!reply.data || ready) return
@@ -430,6 +445,12 @@ function Compose({
     setText(`\n\n---------- Forwarded message ----------\nFrom: ${forward.data.fromAddress ?? ''}\nDate: ${when}\nSubject: ${sub}\n\n${body}`)
     setReady(true)
   }, [forward.data, ready])
+
+  useEffect(() => {
+    if (!attached.data || loadedFiles.current) return
+    loadedFiles.current = true
+    if (attached.data.length > 0) setFiles(attached.data)
+  }, [attached.data])
 
   useEffect(() => {
     if (!draft.data || ready) return
@@ -470,6 +491,7 @@ function Compose({
       text,
       ...(reply.data?.messageIdHdr ? { inReplyTo: reply.data.messageIdHdr } : {}),
       ...(savedId ? { draftId: savedId } : {}),
+      ...(files.length > 0 ? { attachments: files } : {}),
     })
     await onSent()
   }
@@ -497,6 +519,7 @@ function Compose({
       bcc: bccList,
       subject,
       text,
+      ...(files.length > 0 ? { attachments: files } : {}),
     })
     setSavedId(saved.id)
     await onDrafted(saved.id)
@@ -568,10 +591,48 @@ function Compose({
           rows={10}
           className="resize-none bg-transparent px-4 py-3 text-sm outline-none"
         />
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-4 pb-1">
+            {files.map((file, index) => (
+              <span
+                key={`${file.name}-${index}`}
+                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              >
+                {file.name}
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => setFiles(current => current.filter((_, i) => i !== index))}
+                  className="text-zinc-400 hover:text-zinc-700"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {(formError || send.error || saveDraft.error) && (
           <p className="px-4 pb-2 text-xs text-red-600">{formError || send.error?.message || saveDraft.error?.message}</p>
         )}
-        <div className="flex justify-end gap-2 px-4 py-3">
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
+          <div>
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              <Paperclip size={14} />
+              Attach
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={event => { void addFiles(event.target.files, setFiles, setFormError); event.target.value = '' }}
+            />
+          </div>
+          <div className="flex gap-2">
           {!replyToId && (
             <button
               type="button"
@@ -589,10 +650,83 @@ function Compose({
           >
             {send.isPending ? 'Sending…' : 'Send'}
           </button>
+          </div>
         </div>
       </form>
     </div>
   )
+}
+
+function MailFile({
+  id,
+  file,
+  index,
+}: {
+  id: string
+  file: { name: string; type: string; size: number }
+  index: number
+}) {
+  const href = `/mail/files/${id}/${index}`
+  const image = file.type.startsWith('image/')
+  return (
+    <div>
+      {image && <img src={href} alt={file.name} className="max-h-96 max-w-full rounded-md" />}
+      <a href={href} className={image ? 'mt-1 inline-block text-sm text-zinc-600 underline' : 'text-sm text-zinc-700 underline'}>
+        {file.name}
+      </a>
+    </div>
+  )
+}
+
+type AttachedFile = { name: string; type: string; data: string }
+
+function addFiles(
+  list: FileList | null,
+  setFiles: (update: (current: AttachedFile[]) => AttachedFile[]) => void,
+  setFormError: (message: string) => void,
+) {
+  const picked = [...(list ?? [])]
+  if (picked.length === 0) return
+  void (async () => {
+    const next: AttachedFile[] = []
+    for (const file of picked) {
+      if (file.size > 8 * 1024 * 1024) {
+        setFormError('Each attachment can be at most 8 MB.')
+        return
+      }
+      next.push({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        data: await readAsBase64(file),
+      })
+    }
+    setFiles(current => {
+      const joined = [...current, ...next]
+      if (joined.length > 8) {
+        setFormError('You can attach up to 8 files.')
+        return current
+      }
+      const total = joined.reduce((sum, item) => sum + Math.floor(item.data.length * 3 / 4), 0)
+      if (total > 20 * 1024 * 1024) {
+        setFormError('Attachments can be at most 20 MB together.')
+        return current
+      }
+      setFormError('')
+      return joined
+    })
+  })()
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const value = String(reader.result ?? '')
+      resolve(value.slice(value.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read that file.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function CopyField({

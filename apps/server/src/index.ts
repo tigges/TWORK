@@ -11,6 +11,7 @@ import { StorageClient } from '@twork/storage'
 import { authRoutes } from './auth.js'
 import { createContext } from './context.js'
 import { fileRoutes } from './files-http.js'
+import { mailFileRoutes } from './mail-http.js'
 import { mailInboundRoutes } from './mail-inbound.js'
 import { appRouter } from './router.js'
 
@@ -43,7 +44,7 @@ async function main() {
     secretKey: S3_SECRET_KEY,
   })
 
-  const app = Fastify({ logger: { level: 'info' } })
+  const app = Fastify({ logger: { level: 'info' }, bodyLimit: 30 * 1024 * 1024 })
 
   await app.register(cookie)
   await app.register(cors, { origin: ORIGIN, credentials: true })
@@ -51,6 +52,7 @@ async function main() {
 
   authRoutes(app, db, { rpId: RP_ID, rpName: RP_NAME, origin: ORIGIN })
   await mailInboundRoutes(app, db, storage)
+  await mailFileRoutes(app, db, storage)
   await fileRoutes(app, db, storage)
 
   await app.register(fastifyTRPCPlugin, {

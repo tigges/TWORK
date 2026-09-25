@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { and, eq, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import type { DB } from '@twork/db'
@@ -42,6 +43,25 @@ export async function ensureBlob(
     .limit(1)
   if (!existing) throw new Error('blob row missing after upload')
   return existing.id
+}
+
+export async function readStoredBlob(
+  db: DB,
+  storage: { get(key: string): Promise<Readable> },
+  blobId: string,
+): Promise<Buffer | null> {
+  const [row] = await db
+    .select({ storageKey: blobs.storageKey })
+    .from(blobs)
+    .where(eq(blobs.id, blobId))
+    .limit(1)
+  if (!row) return null
+  const stream = await storage.get(row.storageKey)
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
 }
 
 export async function retainBlob(db: DB, blobId: string): Promise<void> {
