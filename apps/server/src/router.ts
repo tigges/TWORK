@@ -1,8 +1,9 @@
 import { TRPCError } from '@trpc/server'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { uuidv7 } from 'uuidv7'
 import { z } from 'zod'
 import {
+  type DB,
   auditLog,
   blobs,
   can,
@@ -502,6 +503,64 @@ const mailRouter = router({
       return { ok: true }
     }),
 
+  setImportant: authed
+    .input(z.object({ id: z.string().uuid(), important: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ownMail(ctx.db, ctx.session.projectId, ctx.session.userId, input.id, 'live')
+      const flags = withFlag(row.flags, 'important', input.important)
+      await saveMailFlags(ctx, row.id, row.flags, flags, 'mail.important')
+      return { flags }
+    }),
+
+  setArchived: authed
+    .input(z.object({ id: z.string().uuid(), archived: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ownMail(ctx.db, ctx.session.projectId, ctx.session.userId, input.id, 'live')
+      const flags = withFlag(row.flags, 'archived', input.archived)
+      await saveMailFlags(ctx, row.id, row.flags, flags, 'mail.archive')
+      return { flags }
+    }),
+
+  remove: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ownMail(ctx.db, ctx.session.projectId, ctx.session.userId, input.id, 'live')
+      const now = new Date()
+      await ctx.db.transaction(async tx => {
+        await tx.update(mailMessages).set({ deletedAt: now, updatedAt: now }).where(eq(mailMessages.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'mail.delete',
+          objectType: 'mail',
+          objectId:   row.id,
+        })
+      })
+      return { ok: true }
+    }),
+
+  restore: authed
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ownMail(ctx.db, ctx.session.projectId, ctx.session.userId, input.id, 'deleted')
+      await ctx.db.transaction(async tx => {
+        await tx.update(mailMessages).set({
+          deletedAt: null,
+          updatedAt: new Date(),
+        }).where(eq(mailMessages.id, row.id))
+        await tx.insert(auditLog).values({
+          id:         uuidv7(),
+          projectId:  ctx.session.projectId,
+          actorId:    ctx.session.userId,
+          action:     'mail.restore',
+          objectType: 'mail',
+          objectId:   row.id,
+        })
+      })
+      return { ok: true }
+    }),
+
   send: authed
     .input(z.object({
       to:         z.string().email(),
@@ -575,6 +634,60 @@ const mailRouter = router({
       return { id }
     }),
 })
+
+async function ownMail(
+  db: DB,
+  projectId: string,
+  userId: string,
+  id: string,
+  mode: 'live' | 'deleted',
+) {
+  const [row] = await db
+    .select({ id: mailMessages.id, flags: mailMessages.flags })
+    .from(mailMessages)
+    .where(and(
+      eq(mailMessages.id, id),
+      eq(mailMessages.projectId, projectId),
+      eq(mailMessages.userId, userId),
+      mode === 'live' ? isNull(mailMessages.deletedAt) : isNotNull(mailMessages.deletedAt),
+    ))
+    .limit(1)
+  if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+  const allowed = await can(userId, 'write', {
+    type: 'mail', id: row.id, projectId,
+  }, db)
+  if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+  return row
+}
+
+function withFlag(flags: string[], name: string, on: boolean): string[] {
+  const next = flags.filter(flag => flag !== name)
+  if (on) next.push(name)
+  return next
+}
+
+async function saveMailFlags(
+  ctx: { db: DB; session: { projectId: string; userId: string } },
+  id: string,
+  before: string[],
+  flags: string[],
+  action: string,
+) {
+  if (before.length === flags.length && before.every((flag, index) => flag === flags[index])) return
+  await ctx.db.transaction(async tx => {
+    await tx.update(mailMessages).set({ flags, updatedAt: new Date() }).where(eq(mailMessages.id, id))
+    await tx.insert(auditLog).values({
+      id:         uuidv7(),
+      projectId:  ctx.session.projectId,
+      actorId:    ctx.session.userId,
+      action,
+      objectType: 'mail',
+      objectId:   id,
+      before:     { flags: before },
+      after:      { flags },
+    })
+  })
+}
 
 function snippet(text: string | null): string {
   if (!text) return ''
