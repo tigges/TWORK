@@ -28,8 +28,6 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runner
-      args:
-        APP_VERSION: ${APP_VERSION:-0}
     restart: unless-stopped
     command: ["node", "apps/server/dist/index.js"]
     env_file: .env
@@ -59,8 +57,6 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runner
-      args:
-        APP_VERSION: ${APP_VERSION:-0}
     restart: unless-stopped
     command: ["node", "apps/worker/dist/index.js"]
     env_file: .env

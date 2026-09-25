@@ -32,8 +32,5 @@ fi
 
 git checkout main
 git pull --ff-only origin main
-# One higher for every commit on main. The sign-in screen and sidebar show this number.
-APP_VERSION=$(git rev-list --count HEAD)
-export APP_VERSION
 docker compose up -d --build app
-echo "$(date -Is) deployed $(git rev-parse --short HEAD) version ${APP_VERSION}"
+echo "$(date -Is) deployed $(git rev-parse --short HEAD) version v$(tr -d '[:space:]' < VERSION)"

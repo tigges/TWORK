@@ -26,10 +26,6 @@ COPY --from=deps /app/apps/worker/node_modules        ./apps/worker/node_modules
 
 COPY . .
 
-# Commit count on main, passed by scripts/deploy-app.sh. Each new commit raises it.
-ARG APP_VERSION=0
-ENV VITE_APP_VERSION=$APP_VERSION
-
 # Build packages (order matters — packages before apps)
 RUN pnpm --filter @twork/db      build
 RUN pnpm --filter @twork/storage build

@@ -1,14 +1,29 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
-function appVersion(env: string | undefined): string {
-  const version = env?.trim()
-  return version ? version : '0'
+// VERSION at the repo root. Raise that integer by one in the same commit as a change.
+function appVersion(): string {
+  const starts = [process.cwd(), dirname(fileURLToPath(import.meta.url))]
+  const files = starts.flatMap(start => [
+    resolve(start, 'VERSION'),
+    resolve(start, '../VERSION'),
+    resolve(start, '../../VERSION'),
+  ])
+  for (const file of files) {
+    try {
+      const n = readFileSync(file, 'utf8').trim()
+      if (/^[0-9]+$/.test(n)) return `v${n}`
+    } catch { /* try the next location */ }
+  }
+  return 'v0'
 }
 
 function versionPlugin(): Plugin {
-  const version = appVersion(process.env['VITE_APP_VERSION'])
+  const version = appVersion()
   return {
     name: 'twork-version',
     config() {
