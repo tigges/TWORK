@@ -16,6 +16,7 @@ import { FilesPage }    from './routes/files.js'
 import { NotesPage }    from './routes/notes.js'
 import { CalendarPage } from './routes/calendar.js'
 import { ChatPage }     from './routes/chat.js'
+import { SettingsPage } from './routes/settings.js'
 
 // ── Router context ────────────────────────────────────────────────────────────
 
@@ -119,6 +120,13 @@ const legacyRoomsRoute = createRoute({
   component:      () => null,
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path:           '/settings',
+  beforeLoad:     ({ context }) => requireAuth(context),
+  component:      SettingsPage,
+})
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -133,6 +141,7 @@ const routeTree = rootRoute.addChildren([
   calendarRoute,
   chatRoute,
   legacyRoomsRoute,
+  settingsRoute,
 ])
 
 export const router = createRouter({

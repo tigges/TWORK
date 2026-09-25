@@ -12,6 +12,16 @@
       if (saved === 'dark' || (!saved && prefersDark)) {
         document.documentElement.classList.add('dark')
       }
+      try {
+        const vars = JSON.parse(localStorage.getItem('twork.accent.vars') || 'null')
+        if (vars && typeof vars === 'object') {
+          for (const [key, value] of Object.entries(vars)) {
+            if (typeof value === 'string' && key.startsWith('--color-indigo-')) {
+              document.documentElement.style.setProperty(key, value)
+            }
+          }
+        }
+      } catch {}
     </script>
   </head>
   <body>
