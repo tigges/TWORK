@@ -1,107 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import { Mail, Paperclip, PenLine, RefreshCw, UserPlus, X } from 'lucide-react'
-import { MailRow, type HoldCommit } from '../components/MailHold.js'
 import { useSidebarOpen } from '../components/Shell.js'
-import { type DownAction } from '../lib/mail-hold.js'
-import { useAuth } from '../main.js'
 import { trpc } from '../trpc.js'
 
 export function MailPage() {
   const sidebarOpen = useSidebarOpen()
-  const { user } = useAuth()
   const utils = trpc.useUtils()
   const search = useSearch({ from: '/mail' })
   const address = trpc.mail.address.useQuery()
   const list = trpc.mail.list.useQuery()
-  const setImportant = trpc.mail.setImportant.useMutation()
-  const setArchived = trpc.mail.setArchived.useMutation()
-  const removeMail = trpc.mail.remove.useMutation()
-  const restoreMail = trpc.mail.restore.useMutation()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composing, setComposing] = useState(!!search.to)
   const [replyTo, setReplyTo] = useState<string | null>(null)
-  const [forwardId, setForwardId] = useState<string | null>(null)
   const [box, setBox] = useState<'inbox' | 'sent' | 'drafts' | 'spam'>('inbox')
   const [draftId, setDraftId] = useState<string | null>(null)
   const [labelFilter, setLabelFilter] = useState<string | null>(null)
-  const [downDefault, setDownDefault] = useState<DownAction>('archive')
-  const [notice, setNotice] = useState<{ text: string; undo?: () => Promise<void> } | null>(null)
-  const noticeTimer = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (!user) return
-    const saved = localStorage.getItem(downKey(user.id))
-    if (saved === 'archive' || saved === 'delete') setDownDefault(saved)
-  }, [user])
-
-  function showNotice(text: string, undo?: () => Promise<void>) {
-    if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
-    setNotice({ text, ...(undo ? { undo } : {}) })
-    noticeTimer.current = window.setTimeout(() => setNotice(null), 6000)
-  }
-
-  function persistDown(next: DownAction) {
-    setDownDefault(next)
-    if (user) localStorage.setItem(downKey(user.id), next)
-  }
-
-  async function refreshMail() {
-    await utils.mail.list.invalidate()
-  }
-
-  async function onHold(row: { id: string; flags: string[] }, action: HoldCommit, swapped: boolean) {
-    try {
-      if (action === 'important') {
-        const on = !row.flags.includes('important')
-        await setImportant.mutateAsync({ id: row.id, important: on })
-        await refreshMail()
-        showNotice(on ? 'Important' : 'Not important', async () => {
-          await setImportant.mutateAsync({ id: row.id, important: !on })
-          await refreshMail()
-        })
-        return
-      }
-      if (action === 'reply') {
-        setForwardId(null)
-        if (row.flags.includes('draft')) {
-          setReplyTo(null)
-          setDraftId(row.id)
-        } else {
-          setDraftId(null)
-          setReplyTo(row.id)
-        }
-        setComposing(true)
-        return
-      }
-      if (action === 'forward') {
-        setReplyTo(null)
-        setDraftId(null)
-        setForwardId(row.id)
-        setComposing(true)
-        return
-      }
-      if (action === 'archive') {
-        await setArchived.mutateAsync({ id: row.id, archived: true })
-        if (swapped) persistDown('archive')
-        await refreshMail()
-        showNotice('Archived', async () => {
-          await setArchived.mutateAsync({ id: row.id, archived: false })
-          await refreshMail()
-        })
-        return
-      }
-      await removeMail.mutateAsync({ id: row.id })
-      if (swapped) persistDown('delete')
-      await refreshMail()
-      showNotice('Deleted', async () => {
-        await restoreMail.mutateAsync({ id: row.id })
-        await refreshMail()
-      })
-    } catch (err) {
-      showNotice(err instanceof Error ? err.message : 'Could not do that')
-    }
-  }
 
   const boxed = useMemo(
     () => (list.data ?? []).filter(row => inBox(row, box)),
@@ -127,7 +41,6 @@ export function MailPage() {
   useEffect(() => {
     if (!search.to) return
     setReplyTo(null)
-    setForwardId(null)
     setComposing(true)
   }, [search.to])
 
@@ -155,7 +68,7 @@ export function MailPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setReplyTo(null); setForwardId(null); setDraftId(null); setComposing(true) }}
+              onClick={() => { setReplyTo(null); setDraftId(null); setComposing(true) }}
               className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
             >
               <PenLine size={14} />
@@ -195,54 +108,55 @@ export function MailPage() {
             <p className="px-4 py-6 text-sm text-zinc-500">No messages with this label.</p>
           )}
           {rows.map(row => {
+            const unread = row.flags.includes('unread')
+            const active = row.id === activeId
             const who = row.direction === 'outbound'
               ? `To ${row.toAddresses?.[0] ?? ''}`
               : (row.fromAddress ?? 'Unknown')
             return (
-              <MailRow
+              <button
                 key={row.id}
-                who={who}
-                when={formatWhen(row.receivedAt)}
-                subject={row.subject || '(no subject)'}
-                snippet={row.snippet}
-                labels={row.labels}
-                important={row.flags.includes('important')}
-                unread={row.flags.includes('unread')}
-                active={row.id === activeId}
-                nearDown={downDefault}
-                onOpen={() => setSelectedId(row.id)}
-                onCommit={(action, swapped) => { void onHold(row, action, swapped) }}
-              />
+                type="button"
+                onClick={() => setSelectedId(row.id)}
+                className={[
+                  'block w-full border-b border-zinc-100 px-4 py-3 text-left dark:border-zinc-800',
+                  active ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60',
+                ].join(' ')}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={['truncate text-sm', unread ? 'font-semibold' : 'font-medium'].join(' ')}>
+                    {who}
+                  </span>
+                  <time className="shrink-0 text-[11px] text-zinc-400">{formatWhen(row.receivedAt)}</time>
+                </div>
+                <p className={['truncate text-sm', unread ? 'font-medium' : 'text-zinc-600 dark:text-zinc-300'].join(' ')}>
+                  {row.subject || '(no subject)'}
+                </p>
+                <p className="truncate text-xs text-zinc-400">{row.snippet || ' '}</p>
+                {row.labels.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {row.labels.map(label => (
+                      <span
+                        key={label}
+                        className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
             )
           })}
         </div>
-        {notice && (
-          <div className="flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
-            <span className="text-zinc-500">{notice.text}</span>
-            {notice.undo && (
-              <button
-                type="button"
-                className="font-medium text-zinc-800 hover:text-zinc-950 dark:text-zinc-100"
-                onClick={() => {
-                  const run = notice.undo
-                  setNotice(null)
-                  if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
-                  if (run) void run()
-                }}
-              >
-                Undo
-              </button>
-            )}
-          </div>
-        )}
       </section>
 
       <section className="flex min-w-0 flex-1 flex-col">
         {activeId
           ? <MessageView
               id={activeId}
-              onReply={(id) => { setDraftId(null); setForwardId(null); setReplyTo(id); setComposing(true) }}
-              onEdit={(id) => { setReplyTo(null); setForwardId(null); setDraftId(id); setComposing(true) }}
+              onReply={(id) => { setDraftId(null); setReplyTo(id); setComposing(true) }}
+              onEdit={(id) => { setReplyTo(null); setDraftId(id); setComposing(true) }}
             />
           : (
             <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
@@ -253,10 +167,9 @@ export function MailPage() {
 
       {composing && (
         <Compose
-          key={`${replyTo ?? ''}:${forwardId ?? ''}:${draftId ?? ''}:${search.to ?? ''}`}
+          key={`${replyTo ?? ''}:${draftId ?? ''}:${search.to ?? ''}`}
           initialTo={search.to ?? ''}
           replyToId={replyTo}
-          forwardId={forwardId}
           draftId={draftId}
           onClose={() => setComposing(false)}
           onSent={async () => {
@@ -381,7 +294,6 @@ function MessageView({
 function Compose({
   initialTo,
   replyToId,
-  forwardId,
   draftId,
   onClose,
   onSent,
@@ -389,7 +301,6 @@ function Compose({
 }: {
   initialTo: string
   replyToId: string | null
-  forwardId: string | null
   draftId: string | null
   onClose: () => void
   onSent: () => Promise<void>
@@ -397,9 +308,6 @@ function Compose({
 }) {
   const reply = trpc.mail.get.useQuery({ id: replyToId ?? '00000000-0000-0000-0000-000000000000' }, {
     enabled: !!replyToId,
-  })
-  const forward = trpc.mail.get.useQuery({ id: forwardId ?? '00000000-0000-0000-0000-000000000000' }, {
-    enabled: !!forwardId,
   })
   const draft = trpc.mail.get.useQuery({ id: draftId ?? '00000000-0000-0000-0000-000000000000' }, {
     enabled: !!draftId,
@@ -416,15 +324,14 @@ function Compose({
   const [subject, setSubject] = useState('')
   const [text, setText] = useState('')
   const [formError, setFormError] = useState('')
-  const [ready, setReady] = useState(!replyToId && !forwardId && !draftId)
+  const [ready, setReady] = useState(!replyToId && !draftId)
   const [savedId, setSavedId] = useState<string | null>(draftId)
   const [files, setFiles] = useState<AttachedFile[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const loadedFiles = useRef(false)
-  const sourceId = forwardId ?? draftId
   const attached = trpc.mail.files.useQuery(
-    { id: sourceId ?? '00000000-0000-0000-0000-000000000000' },
-    { enabled: !!sourceId },
+    { id: draftId ?? '00000000-0000-0000-0000-000000000000' },
+    { enabled: !!draftId },
   )
 
   useEffect(() => {
@@ -435,16 +342,6 @@ function Compose({
     setSubject(sub.toLowerCase().startsWith('re:') ? sub : `Re: ${sub}`)
     setReady(true)
   }, [reply.data, ready])
-
-  useEffect(() => {
-    if (!forward.data || ready) return
-    const sub = forward.data.subject ?? ''
-    setSubject(sub.toLowerCase().startsWith('fw:') ? sub : `Fw: ${sub}`)
-    const when = new Date(forward.data.receivedAt).toLocaleString()
-    const body = forward.data.textBody ?? ''
-    setText(`\n\n---------- Forwarded message ----------\nFrom: ${forward.data.fromAddress ?? ''}\nDate: ${when}\nSubject: ${sub}\n\n${body}`)
-    setReady(true)
-  }, [forward.data, ready])
 
   useEffect(() => {
     if (!attached.data || loadedFiles.current) return
@@ -532,7 +429,7 @@ function Compose({
         className="flex w-full max-w-xl flex-col rounded-xl bg-white shadow-xl dark:bg-zinc-900"
       >
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">{replyToId ? 'Reply' : forwardId ? 'Forward' : draftId ? 'Draft' : 'New message'}</h2>
+          <h2 className="text-sm font-semibold">{replyToId ? 'Reply' : draftId ? 'Draft' : 'New message'}</h2>
           <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700" aria-label="Close">
             <X size={16} />
           </button>
@@ -1025,17 +922,12 @@ function inBox(
   row: { direction: string; flags: string[] },
   box: 'inbox' | 'sent' | 'drafts' | 'spam',
 ): boolean {
-  if (row.flags.includes('archived')) return false
   const draft = row.flags.includes('draft')
   const spam = row.flags.includes('spam')
   if (box === 'drafts') return draft
   if (box === 'spam') return spam && !draft
   if (box === 'sent') return row.direction === 'outbound' && !draft
   return row.direction !== 'outbound' && !spam && !draft
-}
-
-function downKey(userId: string): string {
-  return `twork.mailDown.${userId}`
 }
 
 function emptyTitle(box: 'inbox' | 'sent' | 'drafts' | 'spam'): string {
