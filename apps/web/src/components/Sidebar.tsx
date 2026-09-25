@@ -1,34 +1,10 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import {
-  Calendar,
-  FileText,
-  Folder,
-  LogOut,
-  Mail,
-  MessageSquare,
-  Users,
-  Moon,
-  Search,
-  Sun,
-} from 'lucide-react'
+import { LogOut, Moon, Search, Settings, Sun } from 'lucide-react'
 import { useTheme } from '../lib/theme.js'
+import { useAppearance } from '../lib/appearance.js'
+import { orderedNav } from '../lib/nav.js'
 import { logout } from '../lib/auth.js'
 import { appVersion } from '../version.js'
-
-interface NavItem {
-  to:    string
-  icon:  React.ReactNode
-  label: string
-}
-
-const NAV: NavItem[] = [
-  { to: '/mail',     icon: <Mail size={20} />,          label: 'Mail'     },
-  { to: '/contacts', icon: <Users size={20} />,          label: 'Contacts' },
-  { to: '/files',    icon: <Folder size={20} />,         label: 'Files'    },
-  { to: '/notes',    icon: <FileText size={20} />,       label: 'Notes'    },
-  { to: '/calendar', icon: <Calendar size={20} />,       label: 'Calendar' },
-  { to: '/chat',     icon: <MessageSquare size={20} />,  label: 'Chat'     },
-]
 
 export const navButtonClass = [
   'flex items-center justify-center w-10 h-10 rounded-lg transition-colors',
@@ -44,7 +20,9 @@ export function Sidebar({
   onHide: () => void
 }) {
   const { theme, toggleTheme } = useTheme()
+  const { nav } = useAppearance()
   const { pathname } = useLocation()
+  const items = orderedNav(nav)
 
   const initials = user?.displayName
     .split(' ')
@@ -72,11 +50,12 @@ export function Sidebar({
 
       <div className="w-8 h-px bg-zinc-200 dark:bg-zinc-800 my-1" />
 
-      {NAV.map(item => {
+      {items.map(item => {
         const active = pathname.startsWith(item.to)
+        const Icon = item.icon
         return (
           <Link
-            key={item.to}
+            key={item.id}
             to={item.to}
             title={item.label}
             className={[
@@ -86,12 +65,26 @@ export function Sidebar({
                 : 'hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
             ].join(' ')}
           >
-            {item.icon}
+            <Icon size={20} />
           </Link>
         )
       })}
 
       <div className="flex-1" />
+
+      <Link
+        to="/settings"
+        title="Settings"
+        aria-label="Settings"
+        className={[
+          'flex items-center justify-center w-10 h-10 rounded-lg transition-colors',
+          pathname.startsWith('/settings')
+            ? 'bg-indigo-600 text-white'
+            : 'hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+        ].join(' ')}
+      >
+        <Settings size={18} />
+      </Link>
 
       <NavBtn
         icon={theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}

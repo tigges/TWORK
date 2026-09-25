@@ -3,8 +3,12 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { RouterProvider } from '@tanstack/react-router'
 import { createContext, useContext, useMemo, useState, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { applyStoredAccent } from './lib/accent.js'
+import { AppearanceProvider } from './lib/appearance.js'
 import { getMe } from './lib/auth.js'
 import { ThemeProvider } from './lib/theme.js'
+
+applyStoredAccent()
 import { router } from './router.js'
 import { trpc, makeTrpcClient } from './trpc.js'
 
@@ -66,9 +70,11 @@ if (!root) throw new Error('#root not found')
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <QueryClientProvider client={outerQueryClient}>
-        <App />
-      </QueryClientProvider>
+      <AppearanceProvider>
+        <QueryClientProvider client={outerQueryClient}>
+          <App />
+        </QueryClientProvider>
+      </AppearanceProvider>
     </ThemeProvider>
   </StrictMode>,
 )
