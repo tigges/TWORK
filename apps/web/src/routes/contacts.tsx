@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Mail, Trash2, UserPlus, Users } from 'lucide-react'
+import { ShareField } from '../components/ShareField.js'
 import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
@@ -12,6 +13,7 @@ type Contact = {
   emails: string[]
   phones: string[]
   notes:  string | null
+  mine:   boolean
 }
 
 export function ContactsPage() {
@@ -200,6 +202,7 @@ function ContactForm({
       <div className="mt-6 flex items-center justify-between">
         {contact && onDeleted ? (
           <div className="flex items-center gap-4">
+            {contact.mine && <ShareField type="contact" id={contact.id} excludeId={contact.id} />}
             <Link
               to="/mail"
               search={{ to: contact.email }}
@@ -208,14 +211,16 @@ function ContactForm({
               <Mail size={14} />
               Write
             </Link>
-            <button
-              type="button"
-              onClick={async () => { await remove.mutateAsync({ id: contact.id }); await onDeleted() }}
-              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-600"
-            >
-              <Trash2 size={14} />
-              Delete
-            </button>
+            {contact.mine && (
+              <button
+                type="button"
+                onClick={async () => { await remove.mutateAsync({ id: contact.id }); await onDeleted() }}
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-600"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            )}
           </div>
         ) : <span />}
         <div className="flex gap-2">
@@ -224,13 +229,15 @@ function ContactForm({
               Cancel
             </button>
           )}
-          <button
-            type="submit"
-            disabled={create.isPending || update.isPending}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-          >
-            Save
-          </button>
+          {(!contact || contact.mine) && (
+            <button
+              type="submit"
+              disabled={create.isPending || update.isPending}
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
     </form>

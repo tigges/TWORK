@@ -13,6 +13,7 @@ type Occurrence = {
   startTz:            string
   endTz:              string
   rrule:              string | null
+  people:             string[]
 }
 
 type Series = {
@@ -24,6 +25,7 @@ type Series = {
   endLocal:    string
   timeZone:    string
   rrule:       string | null
+  invitees:    { id: string; name: string }[]
 }
 
 type Panel =
@@ -110,6 +112,8 @@ export function CalendarPage() {
           New event
         </button>
       </header>
+
+      <TaskStrip sidebarOpen={sidebarOpen} />
 
       {view === 'month' ? (
         <MonthGrid
@@ -216,6 +220,7 @@ function EventForm({
   const [timeZone, setTimeZone] = useState(event?.timeZone || browserZone)
   const [repeat, setRepeat] = useState(repeatChoice(event?.rrule ?? null))
   const [customRule, setCustomRule] = useState(repeatChoice(event?.rrule ?? null) === 'custom' ? (event?.rrule ?? '') : '')
+  const [invitees, setInvitees] = useState<{ id: string; name: string }[]>(event?.invitees ?? [])
   const error = create.error ?? update.error ?? remove.error ?? skip.error
 
   async function onSubmit(formEvent: React.FormEvent) {
@@ -231,6 +236,7 @@ function EventForm({
       endLocal:   allDay ? endDate : `${endDate}T${endTime}`,
       timeZone,
       ...(rrule ? { rrule } : {}),
+      contactIds: invitees.map(person => person.id),
     }
     if (event) await update.mutateAsync({ id: event.id, ...input })
     else await create.mutateAsync(input)
@@ -251,6 +257,7 @@ function EventForm({
           Title
           <input value={title} onChange={e => setTitle(e.target.value)} required className="mt-1 w-full rounded-md border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700" />
         </label>
+        <Invitees chosen={invitees} onChange={setInvitees} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
           All day
@@ -347,6 +354,126 @@ function EventForm({
   )
 }
 
+function TaskStrip({ sidebarOpen }: { sidebarOpen: boolean }) {
+  const utils = trpc.useUtils()
+  const list = trpc.tasks.list.useQuery()
+  const create = trpc.tasks.create.useMutation()
+  const toggle = trpc.tasks.toggle.useMutation()
+  const remove = trpc.tasks.remove.useMutation()
+  const [title, setTitle] = useState('')
+
+  async function refresh() {
+    await utils.tasks.list.invalidate()
+  }
+
+  return (
+    <div className={['flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-200 py-2 dark:border-zinc-800', sidebarOpen ? 'px-4' : 'pl-14 pr-4'].join(' ')}>
+      {(list.data ?? []).map(task => (
+        <span key={task.id} className="inline-flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={!!task.doneAt}
+            aria-label={task.title}
+            onChange={async () => { await toggle.mutateAsync({ id: task.id }); await refresh() }}
+          />
+          <span className={task.doneAt ? 'text-zinc-400 line-through' : ''}>{task.title}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${task.title}`}
+            onClick={async () => { await remove.mutateAsync({ id: task.id }); await refresh() }}
+            className="text-zinc-300 hover:text-zinc-600"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        value={title}
+        onChange={event => setTitle(event.target.value)}
+        onKeyDown={async event => {
+          if (event.key !== 'Enter') return
+          event.preventDefault()
+          const next = title.trim()
+          if (!next) return
+          await create.mutateAsync({ title: next })
+          setTitle('')
+          await refresh()
+        }}
+        placeholder="Task"
+        aria-label="New task"
+        className="min-w-32 flex-1 bg-transparent text-sm outline-none"
+      />
+    </div>
+  )
+}
+
+function Invitees({
+  chosen,
+  onChange,
+}: {
+  chosen:   { id: string; name: string }[]
+  onChange: (next: { id: string; name: string }[]) => void
+}) {
+  const people = trpc.contacts.list.useQuery({})
+  const [token, setToken] = useState('')
+  const q = token.trim().toLowerCase()
+  const suggestions = q
+    ? (people.data ?? [])
+      .filter(person => person.mine && !chosen.some(row => row.id === person.id))
+      .filter(person => person.name.toLowerCase().includes(q) || person.emails.some(email => email.includes(q)))
+      .slice(0, 5)
+    : []
+
+  function add(person: { id: string; name: string }) {
+    onChange([...chosen, { id: person.id, name: person.name }])
+    setToken('')
+  }
+
+  return (
+    <div>
+      <span className="text-xs font-medium text-zinc-500">With</span>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {chosen.map(person => (
+          <span key={person.id} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800">
+            {person.name}
+            <button type="button" aria-label={`Remove ${person.name}`} onClick={() => onChange(chosen.filter(row => row.id !== person.id))} className="text-zinc-400 hover:text-zinc-700">
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          value={token}
+          onChange={event => setToken(event.target.value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            const exact = suggestions.find(person => person.name.toLowerCase() === q)
+            const match = exact ?? (suggestions.length === 1 ? suggestions[0] : null)
+            if (match) add(match)
+          }}
+          placeholder="Name"
+          aria-label="Invite"
+          className="min-w-24 flex-1 bg-transparent py-1 text-sm outline-none"
+        />
+      </div>
+      {suggestions.length > 0 && (
+        <div className="mt-1 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700">
+          {suggestions.map(person => (
+            <button
+              key={person.id}
+              type="button"
+              onClick={() => add(person)}
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            >
+              {person.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MonthGrid({
   days, month, todayKey, byDay, onCreate, onOpen,
 }: {
@@ -396,6 +523,7 @@ function MonthGrid({
                     className="block w-full truncate rounded bg-indigo-50 px-1.5 py-0.5 text-left text-[11px] text-indigo-900 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-100 dark:hover:bg-indigo-900/60"
                   >
                     {row.allDay ? row.title : `${timeLabel(row.startUtc, row.startTz)} ${row.title}`}
+                    {row.people.length > 0 ? ` · ${row.people.join(', ')}` : ''}
                   </button>
                 ))}
                 {rows.length > 4 && (
@@ -468,6 +596,7 @@ function TimeGrid({
                   className="block w-full truncate rounded bg-indigo-50 px-1.5 py-0.5 text-left text-[11px] text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-100"
                 >
                   {row.title}
+                  {row.people.length > 0 ? ` · ${row.people.join(', ')}` : ''}
                 </button>
               ))}
             </div>
@@ -515,8 +644,8 @@ function TimeGrid({
                 ))}
                 {hover?.key === key && (
                   <div
-                    className="pointer-events-none absolute inset-x-0 bg-indigo-50/80 dark:bg-indigo-950/50"
-                    style={{ top: hover.hour * HOUR_PX, height: HOUR_PX }}
+                    className="pointer-events-none absolute bg-indigo-50/80 dark:bg-indigo-950/50"
+                    style={{ top: hover.hour * HOUR_PX, height: HOUR_PX, left: 0, right: 0, bottom: 'auto' }}
                   />
                 )}
                 {placed.map(({ row, start, end, col, colCount }) => (
@@ -533,7 +662,10 @@ function TimeGrid({
                     }}
                   >
                     <span className="block truncate font-medium">{row.title}</span>
-                    <span className="block truncate text-[10px] text-indigo-700/80 dark:text-indigo-200/80">{timeLabel(row.startUtc, row.startTz)}</span>
+                    <span className="block truncate text-[10px] text-indigo-700/80 dark:text-indigo-200/80">
+                      {timeLabel(row.startUtc, row.startTz)}
+                      {row.people.length > 0 ? ` · ${row.people.join(', ')}` : ''}
+                    </span>
                   </button>
                 ))}
               </div>

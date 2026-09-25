@@ -2,6 +2,7 @@ import multipart from '@fastify/multipart'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { auditLog, blobs, can, files, type DB } from '@twork/db'
+import { isSharedWith } from './shares.js'
 import type { StorageClient } from '@twork/storage'
 import { uuidv7 } from 'uuidv7'
 import { createContext } from './context.js'
@@ -119,7 +120,8 @@ export async function fileRoutes(app: FastifyInstance, db: DB, storage: StorageC
     const allowed = await can(ctx.session.userId, 'read', {
       type: 'file', id: row.id, projectId: ctx.session.projectId,
     }, db)
-    if (!allowed) return reply.status(403).send({ error: 'forbidden' })
+    const shared = allowed || await isSharedWith(db, ctx.session.projectId, ctx.user?.email ?? '', 'file', row.id)
+    if (!shared) return reply.status(403).send({ error: 'forbidden' })
 
     const type = row.contentType || 'application/octet-stream'
     const inline = type.startsWith('image/') || type === 'application/pdf'

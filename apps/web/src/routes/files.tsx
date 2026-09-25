@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { FileText, Folder, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { ShareField } from '../components/ShareField.js'
 import { useSidebarOpen } from '../components/Shell.js'
 import { trpc } from '../trpc.js'
 
@@ -314,14 +315,17 @@ function Preview({ row, onOpen, onTrash }: { row: BrowseRow; onOpen: () => void;
             {formatWhen(row.updatedAt)}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onTrash}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          <Trash2 size={12} />
-          Trash
-        </button>
+        <div className="flex shrink-0 items-center gap-3">
+          <ShareField type="file" id={row.id} />
+          <button
+            type="button"
+            onClick={onTrash}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            <Trash2 size={12} />
+            Trash
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {row.isFolder && (

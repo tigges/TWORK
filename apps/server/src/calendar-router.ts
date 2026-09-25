@@ -14,8 +14,10 @@ import {
   inclusiveAllDayEnd,
   occurrencesBetween,
   searchIndex,
+  shares,
 } from '@twork/db'
 import type { StoredEvent, StoredException } from '@twork/db'
+import { isSharedWith, objectIdsSharedWith, replaceShares, shareNames } from './shares.js'
 import { authed, router } from './trpc.js'
 
 const MAX_WINDOW_MS = 70 * 24 * 60 * 60 * 1000
@@ -28,6 +30,7 @@ const draftInput = z.object({
   endLocal:    z.string().trim().max(16),
   timeZone:    z.string().trim().min(1).max(80),
   rrule:       z.string().trim().max(500).optional(),
+  contactIds:  z.array(z.string().uuid()).max(24).default([]),
 })
 
 export const calendarRouter = router({
@@ -62,13 +65,14 @@ export const calendarRouter = router({
           ),
         ))
 
+      const sharedIds = new Set(await objectIdsSharedWith(ctx.db, ctx.session.projectId, ctx.user.email, 'event'))
       const access = await canBatch(
         ctx.session.userId,
         'read',
         rows.map(row => ({ type: 'event', id: row.id, projectId: ctx.session.projectId })),
         ctx.db,
       )
-      const visible = rows.filter(row => access.get(row.id))
+      const visible = rows.filter(row => access.get(row.id) || sharedIds.has(row.id))
       if (visible.length === 0) return []
 
       const exceptionRows = await ctx.db
@@ -91,6 +95,7 @@ export const calendarRouter = router({
         exceptions.set(row.eventId, list)
       }
 
+      const people = await shareNames(ctx.db, ctx.session.projectId, 'event', visible.map(row => row.id))
       const occurrences = visible.flatMap(row => occurrencesBetween(
         toStored(row),
         exceptions.get(row.id) ?? [],
@@ -106,6 +111,7 @@ export const calendarRouter = router({
         startTz:            occurrence.startTz,
         endTz:              occurrence.endTz,
         rrule:              occurrence.rrule,
+        people:             (people.get(occurrence.eventId) ?? []).map(person => person.name),
       })))
       occurrences.sort((a, b) => a.startUtc.localeCompare(b.startUtc) || a.title.localeCompare(b.title))
       return occurrences
@@ -130,6 +136,7 @@ export const calendarRouter = router({
         endUtc:   row.endUtc.toISOString(),
         startTz:  row.startTz,
         endTz:    row.endTz,
+        invitees: (await shareNames(ctx.db, ctx.session.projectId, 'event', [row.id])).get(row.id) ?? [],
       }
     }),
 
@@ -169,6 +176,13 @@ export const calendarRouter = router({
           objectType: 'event',
           objectId:   id,
           plainText:  searchText(input.title, description),
+        })
+        await replaceShares(tx as unknown as Parameters<typeof can>[3], {
+          projectId:  ctx.session.projectId,
+          userId:     ctx.session.userId,
+          objectType: 'event',
+          objectId:   id,
+          contactIds: input.contactIds,
         })
       })
       return { id }
@@ -226,6 +240,13 @@ export const calendarRouter = router({
           target: [searchIndex.projectId, searchIndex.objectType, searchIndex.objectId],
           set:    { plainText: searchText(input.title, description), updatedAt: new Date() },
         })
+        await replaceShares(tx as unknown as Parameters<typeof can>[3], {
+          projectId:  ctx.session.projectId,
+          userId:     ctx.session.userId,
+          objectType: 'event',
+          objectId:   row.id,
+          contactIds: input.contactIds,
+        })
       })
       return { id: row.id }
     }),
@@ -245,6 +266,12 @@ export const calendarRouter = router({
           eq(searchIndex.projectId, ctx.session.projectId),
           eq(searchIndex.objectType, 'event'),
           eq(searchIndex.objectId, row.id),
+        ))
+        await tx.update(shares).set({ deletedAt: now, updatedAt: now }).where(and(
+          eq(shares.projectId, ctx.session.projectId),
+          eq(shares.objectType, 'event'),
+          eq(shares.objectId, row.id),
+          isNull(shares.deletedAt),
         ))
         await tx.insert(auditLog).values({
           id:         uuidv7(),
@@ -375,6 +402,7 @@ async function assertProjectWrite(ctx: Authed) {
 
 type Authed = {
   session: { userId: string; projectId: string }
+  user:    { email: string }
   db:      Parameters<typeof can>[3]
 }
 
@@ -392,6 +420,9 @@ async function loadEvent(ctx: Authed, id: string, action: 'read' | 'write' | 'de
   const allowed = await can(ctx.session.userId, action, {
     type: 'event', id: row.id, projectId: ctx.session.projectId,
   }, ctx.db)
-  if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
-  return row
+  if (allowed) return row
+  if (action === 'read' && await isSharedWith(ctx.db, ctx.session.projectId, ctx.user.email, 'event', row.id)) {
+    return row
+  }
+  throw new TRPCError({ code: 'FORBIDDEN' })
 }

@@ -231,6 +231,28 @@ export const calendarEventExceptions = pgTable('calendar_event_exceptions', {
   uniqueIndex('cal_exceptions_unique_idx').on(t.eventId, t.occurrenceStartUtc),
 ]))
 
+// A contact the object is shared with. Invitees on an event use the same rows.
+export const shares = pgTable('shares', {
+  ...base,
+  projectId:  uuid('project_id').notNull().references(() => projects.id),
+  objectType: text('object_type').notNull(), // 'file' | 'contact' | 'event'
+  objectId:   uuid('object_id').notNull(),
+  contactId:  uuid('contact_id').notNull().references(() => contacts.id),
+}, t => ([
+  uniqueIndex('shares_unique_idx').on(t.objectType, t.objectId, t.contactId).where(sql`${t.deletedAt} IS NULL`),
+  index('shares_contact_idx').on(t.contactId).where(sql`${t.deletedAt} IS NULL`),
+]))
+
+export const tasks = pgTable('tasks', {
+  ...base,
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  userId:    uuid('user_id').notNull().references(() => users.id),
+  title:     text('title').notNull(),
+  doneAt:    timestamp('done_at', { withTimezone: true }),
+}, t => ([
+  index('tasks_owner_idx').on(t.projectId, t.userId),
+]))
+
 export const calendarAttendees = pgTable('calendar_attendees', {
   ...base,
   projectId: uuid('project_id').notNull().references(() => projects.id),
