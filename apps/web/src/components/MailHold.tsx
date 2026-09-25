@@ -230,7 +230,7 @@ function HoldOverlay({ overlay, nearDown }: { overlay: Overlay; nearDown: DownAc
       <circle r={HOLD.circle} fill="none" stroke="#ffffff" strokeOpacity="0.7" strokeWidth="8" />
       <circle r={HOLD.circle} fill="none" stroke="#3f3f46" strokeOpacity="0.28" strokeWidth="8" />
       {arms.map(arm => (
-        <Arm key={arm.aim} arm={arm} lit={overlay.aim === arm.aim} dim={overlay.aim !== null && overlay.aim !== arm.aim} />
+        <Arm key={arm.aim} arm={arm} lit={overlay.aim === arm.aim} />
       ))}
     </svg>
   )
@@ -239,11 +239,9 @@ function HoldOverlay({ overlay, nearDown }: { overlay: Overlay; nearDown: DownAc
 function Arm({
   arm,
   lit,
-  dim,
 }: {
   arm: { aim: Aim; action: keyof typeof COLORS; label: string; at: number }
   lit: boolean
-  dim: boolean
 }) {
   const dir = arm.aim === 'far' ? 'down' : arm.aim
   const radius = arm.aim === 'far' ? FAR_INNER : HOLD.inner
@@ -263,7 +261,7 @@ function Arm({
         : { x: arm.at, y: 0 }
   const long = arm.label.length > 2
   return (
-    <g data-arm={arm.aim} data-lit={lit ? 'true' : 'false'} opacity={dim ? 0.42 : 1}>
+    <g data-arm={arm.aim} data-lit={lit ? 'true' : 'false'}>
       <path
         d={PATH}
         transform={transform}
