@@ -7,10 +7,7 @@ import {
   blobs,
   can,
   canBatch,
-  channels,
-  channelMembers,
   contacts,
-  documents,
   files as filesTable,
   mailMessages,
   searchIndex,
@@ -19,7 +16,9 @@ import { mailboxAddress } from './mailbox.js'
 import { buildRfc5322, deliverMail, outboundConfigured } from './mail-send.js'
 import { cleanFileName } from './file-name.js'
 import { siblingNameTaken } from './files-shared.js'
-import { storeRawMessage } from './mail-store.js'
+import { saveDraftMessage, storeRawMessage } from './mail-store.js'
+import { notesRouter } from './notes-router.js'
+import { chatRouter } from './chat-router.js'
 import { calendarRouter } from './calendar-router.js'
 import { authed, router } from './trpc.js'
 
@@ -233,17 +232,6 @@ async function folderCrumbs(db: Parameters<typeof can>[3], projectId: string, fo
   return crumbs
 }
 
-// ── Pages ─────────────────────────────────────────────────────────────────────
-
-const pagesRouter = router({
-  list: authed.query(async ({ ctx }) =>
-    ctx.db
-      .select()
-      .from(documents)
-      .where(and(eq(documents.projectId, ctx.session.projectId), isNull(documents.deletedAt))),
-  ),
-})
-
 // ── Mail ──────────────────────────────────────────────────────────────────────
 
 const MAX_COPIES = 20
@@ -412,6 +400,71 @@ const mailRouter = router({
       return { ok: true }
     }),
 
+  saveDraft: authed
+    .input(z.object({
+      id:      z.string().uuid().optional(),
+      to:      z.string().trim().max(320).default(''),
+      cc:      addressListInput('Cc'),
+      bcc:     addressListInput('Bcc'),
+      subject: z.string().max(998).default(''),
+      text:    z.string().max(200_000).default(''),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const allowed = await can(ctx.session.userId, 'write', {
+        type: 'project', id: ctx.session.projectId, projectId: ctx.session.projectId,
+      }, ctx.db)
+      if (!allowed) throw new TRPCError({ code: 'FORBIDDEN' })
+      if (input.to && !z.string().email().safeParse(input.to).success) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'To has an address that is not an email.' })
+      }
+      try {
+        const id = await saveDraftMessage(ctx.db, ctx.storage, {
+          projectId:   ctx.session.projectId,
+          userId:      ctx.session.userId,
+          fromName:    ctx.user.displayName,
+          fromAddress: mailboxAddress(ctx.user.email),
+          to:          input.to,
+          cc:          input.cc,
+          bcc:         input.bcc,
+          subject:     input.subject,
+          text:        input.text,
+          ...(input.id ? { id: input.id } : {}),
+        })
+        return { id }
+      } catch (err) {
+        if (err instanceof Error && err.message === 'draft not found') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'That draft is no longer here.' })
+        }
+        throw err
+      }
+    }),
+
+  setSpam: authed
+    .input(z.object({ id: z.string().uuid(), spam: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .select({ id: mailMessages.id, flags: mailMessages.flags, direction: mailMessages.direction })
+        .from(mailMessages)
+        .where(and(
+          eq(mailMessages.id, input.id),
+          eq(mailMessages.projectId, ctx.session.projectId),
+          eq(mailMessages.userId, ctx.session.userId),
+          isNull(mailMessages.deletedAt),
+        ))
+        .limit(1)
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND' })
+      if (row.direction !== 'inbound' || row.flags.includes('draft')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only received mail can be marked as spam.' })
+      }
+      const flags = row.flags.filter(flag => flag !== 'spam')
+      if (input.spam) flags.push('spam')
+      await ctx.db.update(mailMessages).set({
+        flags,
+        updatedAt: new Date(),
+      }).where(eq(mailMessages.id, row.id))
+      return { ok: true }
+    }),
+
   send: authed
     .input(z.object({
       to:         z.string().email(),
@@ -420,6 +473,7 @@ const mailRouter = router({
       subject:    z.string().min(1).max(998),
       text:       z.string().min(1).max(200_000),
       inReplyTo:  z.string().min(1).optional(),
+      draftId:    z.string().uuid().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const allowed = await can(ctx.session.userId, 'write', {
@@ -470,6 +524,17 @@ const mailRouter = router({
         const message = err instanceof Error ? err.message : 'send failed'
         throw new TRPCError({ code: 'BAD_GATEWAY', message })
       }
+      if (input.draftId) {
+        await ctx.db.update(mailMessages).set({
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(mailMessages.id, input.draftId),
+          eq(mailMessages.projectId, ctx.session.projectId),
+          eq(mailMessages.userId, ctx.session.userId),
+          isNull(mailMessages.deletedAt),
+        ))
+      }
       return { id }
     }),
 })
@@ -506,25 +571,6 @@ function normalizeLabels(input: string[]): string[] {
 function sameLabels(current: string[], next: string[]): boolean {
   return current.length === next.length && current.every((label, index) => label === next[index])
 }
-
-// ── Rooms (chat) ──────────────────────────────────────────────────────────────
-
-const roomsRouter = router({
-  channels: authed.query(async ({ ctx }) =>
-    ctx.db
-      .select({ id: channels.id, name: channels.name, topic: channels.topic, isDm: channels.isDm })
-      .from(channels)
-      .innerJoin(
-        channelMembers,
-        and(
-          eq(channelMembers.channelId, channels.id),
-          eq(channelMembers.userId,    ctx.session.userId),
-          isNull(channelMembers.deletedAt),
-        ),
-      )
-      .where(and(eq(channels.projectId, ctx.session.projectId), isNull(channels.deletedAt))),
-  ),
-})
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
@@ -726,11 +772,11 @@ const searchRouter = router({
 
 export const appRouter = router({
   files:    filesRouter,
-  pages:    pagesRouter,
+  notes:    notesRouter,
   mail:     mailRouter,
   contacts: contactsRouter,
   calendar: calendarRouter,
-  rooms:    roomsRouter,
+  chat:     chatRouter,
   search:   searchRouter,
 })
 

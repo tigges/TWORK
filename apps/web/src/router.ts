@@ -13,9 +13,9 @@ import { SetupPage }    from './routes/auth/setup.js'
 import { MailPage }     from './routes/mail.js'
 import { ContactsPage } from './routes/contacts.js'
 import { FilesPage }    from './routes/files.js'
-import { PagesPage }    from './routes/pages.js'
+import { NotesPage }    from './routes/notes.js'
 import { CalendarPage } from './routes/calendar.js'
-import { RoomsPage }    from './routes/rooms.js'
+import { ChatPage }     from './routes/chat.js'
 
 // ── Router context ────────────────────────────────────────────────────────────
 
@@ -84,11 +84,18 @@ const filesRoute = createRoute({
   component:      FilesPage,
 })
 
-const pagesRoute = createRoute({
+const notesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path:           '/notes',
+  beforeLoad:     ({ context }) => requireAuth(context),
+  component:      NotesPage,
+})
+
+const legacyPagesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path:           '/pages',
-  beforeLoad:     ({ context }) => requireAuth(context),
-  component:      PagesPage,
+  beforeLoad:     () => { throw redirect({ to: '/notes' }) },
+  component:      () => null,
 })
 
 const calendarRoute = createRoute({
@@ -98,11 +105,18 @@ const calendarRoute = createRoute({
   component:      CalendarPage,
 })
 
-const roomsRoute = createRoute({
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path:           '/chat',
+  beforeLoad:     ({ context }) => requireAuth(context),
+  component:      ChatPage,
+})
+
+const legacyRoomsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path:           '/rooms',
-  beforeLoad:     ({ context }) => requireAuth(context),
-  component:      RoomsPage,
+  beforeLoad:     () => { throw redirect({ to: '/chat' }) },
+  component:      () => null,
 })
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -114,9 +128,11 @@ const routeTree = rootRoute.addChildren([
   mailRoute,
   contactsRoute,
   filesRoute,
-  pagesRoute,
+  notesRoute,
+  legacyPagesRoute,
   calendarRoute,
-  roomsRoute,
+  chatRoute,
+  legacyRoomsRoute,
 ])
 
 export const router = createRouter({
